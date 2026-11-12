@@ -3,7 +3,7 @@ import { jwtVerify } from "jose";
 
 // Primeira barreira: sem sessão válida, nada além de /login e /setup.
 // A verificação definitiva (usuário ativo, perfil) acontece no servidor em cada página e ação.
-const PUBLIC = ["/login", "/setup", "/api/health", "/brand", "/_next", "/favicon"];
+const PUBLIC = ["/login", "/setup", "/api/health", "/brand", "/_next", "/favicon", "/icon"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
