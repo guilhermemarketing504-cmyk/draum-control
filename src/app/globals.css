@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Archivo "Expanded" = eixo de largura 125% (padrão do manual) */
+.font-display { font-family: "Archivo Variable", Archivo, system-ui, sans-serif; font-stretch: 125%; font-weight: 300; letter-spacing: -0.01em; }
+.label { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #7A7067; }
+
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body { @apply bg-offwhite text-mineral font-sans text-[13.5px] leading-relaxed; }
+  ::selection { background: #D8CFC2; }
+  /* itens de grid não estouram a largura por causa de tabelas largas */
+  .grid > * { min-width: 0; }
+  :focus-visible { outline: 2px solid #584F49; outline-offset: 2px; }
+}
+
+@layer components {
+  .card { @apply bg-paper border border-line rounded-md; }
+  .card-pad { @apply p-5; }
+  .btn { @apply inline-flex items-center justify-center gap-2 h-9 px-4 rounded text-[13px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap; }
+  .btn-primary { @apply btn bg-mineral text-offwhite hover:bg-grafite; }
+  .btn-secondary { @apply btn border border-line bg-paper text-mineral hover:border-stone; }
+  .btn-ghost { @apply btn text-espresso hover:bg-sand/40; }
+  .btn-danger { @apply btn border border-crit/30 text-crit hover:bg-crit/5; }
+  .btn-sm { @apply h-7 px-3 text-[12px]; }
+  .input { @apply w-full h-9 rounded border border-line bg-white/70 px-3 text-[13px] text-mineral placeholder:text-muted/70 focus:border-espresso focus:outline-none; }
+  textarea.input { @apply h-auto py-2; }
+  .field { @apply flex flex-col gap-1.5; }
+  .field > span { @apply label; }
+  .table { @apply w-full text-left border-collapse; }
+  .table th { @apply label font-normal px-4 py-2.5 border-b border-line whitespace-nowrap; }
+  .table td { @apply px-4 py-3 border-b border-line/70 align-middle; }
+  .table tbody tr:hover { @apply bg-offwhite/60; }
+  .num { font-variant-numeric: tabular-nums; }
+  .chip { @apply inline-flex items-center gap-1.5 h-[22px] px-2 rounded-sm text-[11.5px] border whitespace-nowrap; }
+  .chip-neutral { @apply chip border-line bg-offwhite text-espresso; }
+  .chip-dark { @apply chip border-mineral bg-mineral text-offwhite; }
+  .chip-ok { @apply chip border-ok/25 bg-ok/5 text-ok; }
+  .chip-warn { @apply chip border-warn/30 bg-warn/5 text-warn; }
+  .chip-crit { @apply chip border-crit/30 bg-crit/5 text-crit; }
+  .link { @apply underline decoration-stone underline-offset-2 hover:decoration-mineral; }
+  /* O Vão: fio com corte diagonal de 7° */
+  .vao { position: relative; height: 1px; background: #D8CFC2; }
+  .vao::after { content: ""; position: absolute; left: 0; top: -7px; width: 1px; height: 15px; background: #584F49; transform: rotate(7deg); }
+}
+
+@media print {
+  aside, .no-print { display: none !important; }
+  main { margin: 0 !important; padding: 0 !important; }
+  body { background: white; }
+  .card { border-color: #ccc; }
+}
