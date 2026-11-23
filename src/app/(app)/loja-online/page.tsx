@@ -150,6 +150,7 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
               <Field label="Margem sobre o preço de venda (%)" hint="50% = custo × 2"><input className="input" name="margin_pct" type="number" step="1" min="0" max="90" defaultValue={st.margin_pct} /></Field>
               <Field label="Final do preço" hint="0,90 arredonda para cima em ,90. Use 0 para não arredondar."><input className="input" name="price_ending" type="number" step="0.01" min="0" max="0.99" defaultValue={st.price_ending} /></Field>
               <Field label="Prazo da MFT (dias)" hint="Usado na regra de prazo da pré-venda."><input className="input" name="mft_lead_days" type="number" min="0" max="30" defaultValue={st.mft_lead_days} /></Field>
+              <Field label="InfiniteTag (pagamento na loja)" hint="Sem o $. Vazio = pagamento só pelo WhatsApp."><input className="input" name="infinitepay_handle" defaultValue={st.infinitepay_handle ?? ""} placeholder="sualoja" /></Field>
             </div>
             <label className="flex items-center gap-2 mt-4 text-[13px]"><input type="checkbox" name="mft_enabled" defaultChecked={st.mft_enabled} className="accent-mineral" /> Mostrar o catálogo sob encomenda (MFT) na loja</label>
             <p className="text-[12px] text-muted mt-3">Mudar a margem ou o final do preço recalcula na hora todos os preços da MFT. O dia e a hora do corte ficam em Configurações → Pré-venda e entregas.</p>
