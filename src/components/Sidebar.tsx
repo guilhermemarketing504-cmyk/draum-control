@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LayoutGrid, Shirt, Boxes, ReceiptText, Hourglass, Users, Factory, Wallet, Truck, Megaphone, FileSpreadsheet, Settings, LogOut, Menu, X } from "lucide-react";
+import { LayoutGrid, Shirt, Boxes, ReceiptText, Hourglass, Users, Factory, Wallet, Truck, Megaphone, FileSpreadsheet, Settings, LogOut, Menu, X, Store } from "lucide-react";
 import { Wordmark, Symbol } from "./brand";
 import { logoutAction } from "@/app/actions/auth";
 
@@ -11,6 +11,7 @@ const NAV = [
   { href: "/produtos", label: "Produtos", icon: Shirt },
   { href: "/estoque", label: "Estoque", icon: Boxes },
   { href: "/pedidos", label: "Pedidos", icon: ReceiptText },
+  { href: "/loja-online", label: "Loja online", icon: Store, admin: true },
   { href: "/pre-vendas", label: "Pré-vendas", icon: Hourglass },
   { href: "/clientes", label: "Clientes e Grupo VIP", icon: Users },
   { href: "/fornecedores", label: "Fornecedores", icon: Factory },

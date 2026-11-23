@@ -8,10 +8,13 @@ import { ActionForm, ActionButton, Field, Disclosure } from "@/components/forms"
 import { EditProductForm } from "@/components/ProductForm";
 import { addVariantsAction, toggleVariantAction, saveProductSupplierAction, checkAvailabilityAction, removeProductSupplierAction } from "@/app/actions/products";
 import { brl, int, pct, dateTimeBR } from "@/lib/format";
+import { listProductImages } from "@/server/images";
+import { PhotoUploader } from "@/components/ProductPhotos";
+import { removeProductImageAction } from "@/app/actions/store";
 
 export default async function Produto({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [data, suppliers, s] = await Promise.all([getProduct(Number(id)), listSuppliers(), getSettings()]);
+  const [data, suppliers, s, images] = await Promise.all([getProduct(Number(id)), listSuppliers(), getSettings(), listProductImages(Number(id))]);
   if (!data) notFound();
   const { product: p, variants, suppliers: links } = data;
   const price = Number(p.promo_price ?? p.sale_price);
@@ -47,6 +50,29 @@ export default async function Produto({ params }: { params: Promise<{ id: string
                   <Field label="Tamanhos"><input className="input" name="sizes" placeholder="P, M, G" required /></Field>
                 </ActionForm>
               </Disclosure>
+            </div>
+          </Section>
+
+          <Section title="Fotos na loja online" actions={p.slug && p.status === "ativo" ? <Link href={`/loja/${p.slug}`} target="_blank" className="link text-[12px]">Ver na loja ↗</Link> : undefined}>
+            <div className="card-pad space-y-4">
+              {images.length === 0 && !p.image_url && <p className="text-[12.5px] text-muted">Sem fotos. Produtos sem foto aparecem na loja com um quadro neutro.</p>}
+              {images.length > 0 && (
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                  {images.map((im) => (
+                    <div key={im.id} className="space-y-1">
+                      <div className="aspect-[3/4] bg-sand/50 overflow-hidden"><img src={im.url ?? `/loja/img/${im.id}`} alt="" className="w-full h-full object-cover" loading="lazy" /></div>
+                      <div className="flex items-center justify-between gap-1 text-[10.5px] text-muted">
+                        <span className="truncate">{im.color ?? "todas"}</span>
+                        {im.uploaded && <ActionButton action={removeProductImageAction} fields={{ id: im.id }} label="×" className="btn-ghost h-5 px-1.5 text-[12px]" confirm="Remover esta foto?" />}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {p.source === "mft"
+                ? <p className="text-[12px] text-muted">Fotos sincronizadas da MFT pelo robô. Você pode adicionar fotos próprias também.</p>
+                : null}
+              <PhotoUploader productId={p.id} colors={[...new Set(variants.map((v: any) => v.color as string))]} />
             </div>
           </Section>
 

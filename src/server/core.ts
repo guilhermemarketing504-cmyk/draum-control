@@ -49,16 +49,23 @@ export interface Settings {
   availability_valid_days: number;
   route_capacity_default: number;
   delivery_cutoff: { weekday: number; hour: number };
+  store: StoreSettings;
   goals: {
     vip_members: number; paid_orders: number; paid_orders_deadline: string; avg_ticket: number;
     gross_revenue: number; contribution_margin_pct: number; on_time_delivery_pct: number;
   };
 }
 
+export interface StoreSettings {
+  whatsapp: string; margin_pct: number; price_ending: number; mft_lead_days: number; mft_enabled: boolean; mft_supplier_id: number | null;
+}
+export const STORE_DEFAULTS: StoreSettings = { whatsapp: "", margin_pct: 50, price_ending: 0.9, mft_lead_days: 2, mft_enabled: true, mft_supplier_id: null };
+
 export async function getSettings(db: Db = getPool()): Promise<Settings> {
   const rows = await q<{ key: string; value: any }>(`select key, value from draum.settings`, [], db);
   const s: any = {};
   for (const r of rows) s[r.key] = r.value;
+  s.store = { ...STORE_DEFAULTS, ...(s.store ?? {}) };
   return s as Settings;
 }
 
