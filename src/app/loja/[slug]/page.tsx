@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const r = await getStoreProduct((await params).slug, await vipFromCookie());
   if (!r) notFound();
-  const { product, variants, images, deliveryDate, cutoff } = r;
+  const { product, variants, images, deliveryDate, cutoff, cutoffAt } = r;
   const sellable = variants.filter((v) => v.mode);
   return (
     <div className="max-w-[1240px] mx-auto px-5 sm:px-8 pt-6 pb-10">
@@ -32,6 +32,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         images={images}
         deliveryDate={deliveryDate}
         cutoff={cutoff}
+        cutoffAt={cutoffAt}
       />
     </div>
   );

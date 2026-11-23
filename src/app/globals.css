@@ -51,3 +51,29 @@
   body { background: white; }
   .card { border-color: #ccc; }
 }
+
+/* ───────── Loja: identidade DRAUM PRIVATE ACCESS (quem entra pelo link do grupo) ───────── */
+.theme-vip, .theme-vip header, .theme-vip main { background-color: #1E1F1D; color: #F3F0E8; }
+.theme-vip :is(header, main) .bg-offwhite { background-color: #1E1F1D; }
+.theme-vip :is(header, main) .bg-offwhite\/95 { background-color: rgb(30 31 29 / 0.95); }
+.theme-vip :is(header, main) .bg-paper { background-color: #262725; }
+.theme-vip :is(header, main) .text-mineral { color: #F3F0E8; }
+.theme-vip :is(header, main) .text-espresso { color: #D8CFC2; }
+.theme-vip :is(header, main) .text-muted, .theme-vip :is(header, main) .label { color: #A89C8B; }
+.theme-vip :is(header, main) .border-line, .theme-vip :is(header, main) .border-y, .theme-vip :is(header, main) .border-b { border-color: #3B3B38; }
+.theme-vip :is(header, main) .divide-line > * + * { border-color: #3B3B38; }
+.theme-vip :is(header, main) .bg-mineral:not(.keep) { background-color: #F3F0E8; color: #252624; }
+.theme-vip :is(header, main) .bg-mineral:not(.keep) * { color: inherit; }
+.theme-vip :is(header, main) .border-mineral { border-color: #F3F0E8; }
+.theme-vip :is(header, main) .bg-offwhite\/95.text-mineral { color: #F3F0E8; }
+.theme-vip :is(header, main) .bg-sand\/50 { background-color: #2E2F2C; }
+.theme-vip :is(header, main) .input { background-color: #262725; border-color: #3B3B38; color: #F3F0E8; }
+.theme-vip :is(header, main) .vao { background: #3B3B38; }
+.theme-vip :is(header, main) .vao::after { background: #A89C8B; }
+.theme-vip :is(header, main) .hover\:bg-grafite:hover { background-color: #D8CFC2; }
+
+/* Faixa de impacto da Black Friday */
+.bf-band { background: #111210; color: #F3F0E8; }
+.theme-vip .bf-band { background: #F3F0E8; color: #111210; }
+.bf-giant { font-family: "Archivo Variable", Archivo, system-ui, sans-serif; font-stretch: 125%; font-weight: 800; letter-spacing: -0.035em; line-height: 0.86; text-transform: uppercase; }
+.theme-vip :is(header, main) .text-ok { color: #A9C29A; }

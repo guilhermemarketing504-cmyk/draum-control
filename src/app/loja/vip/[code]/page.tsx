@@ -29,7 +29,7 @@ export default async function VipAccess({ params }: { params: Promise<{ code: st
         <div className="label !text-stone">DRAUM Private Access</div>
         <h1 className="font-display text-[34px] sm:text-[48px] leading-[1.04]">Você compra antes. Com {vip?.pct ?? 20}% OFF em todas as peças.</h1>
         <p className="text-[14px] text-sand max-w-[560px]">
-          {vip && ends ? <>O acesso antecipado à nossa primeira Black Friday vai de {dm(vip.startsAt)} a {dm(ends)}, antes de abrir para todo mundo. </> : null}
+          {vip && ends ? <>Na primeira Black Friday da DRAUM, quem está no grupo compra antes, a partir de {dm(vip.startsAt)}, e com {vip.pct}% OFF até {dm(ends)}. </> : null}
           Confirme seus dados para liberar os preços neste celular.
         </p>
         <LeadForm mode="vip" code={code} dark />

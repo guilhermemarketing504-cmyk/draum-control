@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Wordmark, Tagline, Symbol } from "@/components/brand";
 import { BagButton } from "./bag";
+import { vipFromCookie } from "./vip";
+import { storePromotions, activePromo } from "@/server/store";
 
 export const metadata: Metadata = {
   title: { absolute: "DRAUM — The Art of Movement", template: "%s · DRAUM" },
@@ -9,11 +11,23 @@ export const metadata: Metadata = {
   robots: { index: true, follow: true },
 };
 
-export default function StoreLayout({ children }: { children: React.ReactNode }) {
+export const dynamic = "force-dynamic";
+
+export default async function StoreLayout({ children }: { children: React.ReactNode }) {
+  const isVip = await vipFromCookie();
+  const promos = await storePromotions().catch(() => []);
+  const active = activePromo(promos, isVip);
+  const pub = promos.find((p) => !p.requiresVip);
+  const dm = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Belem" });
+  const bar = isVip
+    ? active ? `DRAUM Private Access · ${active.pct}% OFF em tudo liberado` : "DRAUM Private Access · seu acesso está garantido"
+    : active ? `Black Friday DRAUM · ${active.pct}% OFF em tudo até ${dm(new Date(active.endsAt.getTime() - 60_000))}`
+    : pub && new Date() < pub.startsAt ? `Black Friday DRAUM · ${dm(pub.startsAt)} a ${dm(new Date(pub.endsAt.getTime() - 60_000))}`
+    : "Entrega gratuita em Belém toda terça-feira";
   return (
-    <div className="min-h-screen bg-offwhite text-mineral flex flex-col">
-      <div className="bg-mineral text-sand text-center text-[11px] tracking-[0.14em] uppercase font-mono py-2 px-4">
-        Entrega gratuita em Belém toda terça-feira
+    <div className={`min-h-screen bg-offwhite text-mineral flex flex-col ${isVip ? "theme-vip" : ""}`}>
+      <div className={`text-center text-[11px] tracking-[0.14em] uppercase font-mono py-2 px-4 ${isVip ? "bg-sand text-mineral" : "bg-mineral text-sand"}`}>
+        {bar}
       </div>
       <header className="sticky top-0 z-30 bg-offwhite/95 backdrop-blur border-b border-line">
         <div className="max-w-[1240px] mx-auto px-5 sm:px-8 h-16 flex items-center justify-between gap-6">
@@ -24,7 +38,7 @@ export default function StoreLayout({ children }: { children: React.ReactNode })
           </nav>
           <Link href="/loja" aria-label="DRAUM — início" className="flex flex-col items-center gap-1.5">
             <Wordmark className="h-[17px]" />
-            <Tagline className="h-[5px] text-espresso" />
+            {isVip ? <span className="font-mono text-[8.5px] tracking-[0.28em] uppercase text-stone">Private Access</span> : <Tagline className="h-[5px] text-espresso" />}
           </Link>
           <div className="flex-1 flex justify-end"><BagButton /></div>
         </div>
