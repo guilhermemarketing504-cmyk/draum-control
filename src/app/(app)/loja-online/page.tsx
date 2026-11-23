@@ -1,12 +1,13 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { requireAdminPage } from "@/lib/auth";
 import { getSettings } from "@/server/core";
-import { listMftCosts, lastSyncRuns } from "@/server/mft";
+import { listMftCosts, lastSyncRuns, getImportToken } from "@/server/mft";
 import { priceFromCost, cutoffLabel, storeDeliveryDate } from "@/server/store";
 import { q1 } from "@/lib/db";
 import { PageHeader, Section, Stat, Alert, Tabs } from "@/components/ui";
 import { ActionForm, Field } from "@/components/forms";
-import { saveStoreSettingsAction, syncMftAction, saveMftCostsAction } from "@/app/actions/store";
+import { saveStoreSettingsAction, saveMftCostsAction } from "@/app/actions/store";
 import { CATEGORIES } from "@/server/products";
 import { brl, dateTimeBR, dateBR, int } from "@/lib/format";
 
@@ -17,7 +18,9 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
   await requireAdminPage();
   const sp = await searchParams;
   const tab = sp.aba ?? "visao";
-  const [s, runs, costs, counts] = await Promise.all([
+  const h = await headers();
+  const base = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+  const [s, runs, costs, counts, token] = await Promise.all([
     getSettings(), lastSyncRuns(8), listMftCosts(),
     q1<any>(`select
         (select count(*) from draum.orders where channel = 'loja') as orders,
@@ -25,7 +28,9 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
         (select count(*) from draum.products where source = 'proprio' and status = 'ativo' and store_visible) as own,
         (select count(*) from draum.products p where source = 'proprio' and status = 'ativo' and store_visible
            and not exists (select 1 from draum.product_images i where i.product_id = p.id) and p.image_url is null) as own_no_photo`),
+    getImportToken(),
   ]);
+  const bookmarklet = `javascript:(function(){window.__DRAUM={endpoint:'${base}/api/mft/import',token:'${token}'};var s=document.createElement('script');s.src='${base}/api/mft/import.js?v='+Date.now();document.body.appendChild(s);})();`;
   const st = s.store;
   const last = runs[0];
   const missing = costs.filter((c) => !(Number(c.unit_cost) > 0) && c.status !== "pausado");
@@ -46,7 +51,7 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
           hint={last ? `atualizado ${dateTimeBR(last.finished_at ?? last.started_at)}` : "ainda não sincronizado"} tone={last?.status === "erro" ? "crit" : undefined} />
       </div>
       <Tabs current={tab} tabs={[
-        { key: "visao", label: "Sincronização MFT", href: "/loja-online" },
+        { key: "visao", label: "Atualizar MFT", href: "/loja-online" },
         { key: "custos", label: `Custos MFT${missing.length ? ` (${missing.length} pendentes)` : ""}`, href: "/loja-online?aba=custos" },
         { key: "config", label: "Configuração", href: "/loja-online?aba=config" },
       ]} />
@@ -70,12 +75,19 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
               </tbody>
             </table>
           </Section>
-          <Section title="Robô da MFT">
+          <Section title="Atualizar o catálogo da MFT">
             <div className="card-pad space-y-3 text-[12.5px] text-espresso">
-              <p>O robô lê o site da MFT e atualiza peças, fotos, cores, tamanhos e o estoque da fábrica. Peças que saem do site da MFT são pausadas aqui e somem da loja.</p>
-              <p>Ele roda sozinho a cada 3 horas. O preço de custo não é lido automaticamente porque o login da MFT tem verificação anti-robô; mantenha-o na aba <b>Custos MFT</b>.</p>
-              <ActionForm action={syncMftAction} submitLabel="Sincronizar agora" submitClass="btn-primary" />
-              <p className="text-[11.5px] text-muted">Leva de 4 a 6 minutos: o site da MFT limita o ritmo de acessos, então o robô lê uma página por vez.</p>
+              <p>A leitura roda no seu navegador, dentro do site da MFT e já logado como revendedor. Ela atualiza peças, fotos, cores, tamanhos, o estoque da fábrica <b>e o custo</b>. Peças que saíram da MFT são pausadas e somem da loja.</p>
+              <div className="label pt-1">Uma vez só: instale o favorito</div>
+              <p>Arraste o botão abaixo para a barra de favoritos do navegador (Ctrl+Shift+B mostra a barra).</p>
+              <div dangerouslySetInnerHTML={{ __html: `<a href="${bookmarklet.replace(/"/g, "&quot;")}" class="btn-primary" style="cursor:grab" onclick="alert('Arraste este botão para a barra de favoritos. Depois, clique nele estando no site da MFT.');return false;">DRAUM · Atualizar MFT</a>` }} />
+              <div className="label pt-2">Para atualizar</div>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>Entre no site da MFT com o login de revendedor.</li>
+                <li>Clique no favorito <b>DRAUM · Atualizar MFT</b>.</li>
+                <li>Espere o aviso "Pronto!" no canto da tela (5 a 8 minutos, deixe a aba aberta).</li>
+              </ol>
+              <p className="text-[11.5px] text-muted">Faça isso pelo menos uma vez por dia, e sempre antes do corte de sexta. O favorito contém uma chave de acesso: não compartilhe.</p>
             </div>
           </Section>
         </div>

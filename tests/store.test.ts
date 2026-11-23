@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { q, q1, closePool } from "@/lib/db";
 import { users, fixture, setSetting } from "./helpers";
 import { priceFromCost, listStoreProducts, getStoreProduct, placeStoreOrder, cartLines, storeDeliveryDate } from "@/server/store";
-import { parseProduct, parseListing, saveMftCosts } from "@/server/mft";
+import { parseProduct, parseListing, saveMftCosts, importMftFromBrowser, getImportToken, checkImportToken } from "@/server/mft";
 import { getSettings, Ctx, BusinessError } from "@/server/core";
 import { createProduct } from "@/server/products";
 import { adjustStock } from "@/server/inventory";
@@ -150,6 +150,37 @@ describe("Loja online", () => {
     const a = await placeStoreOrder(input);
     const b = await placeStoreOrder(input);
     expect(b.number).toBe(a.number);
+  });
+});
+
+describe("Leitura da MFT pelo navegador", () => {
+  const item = (id: number, cost: number | null, stock = 10) => ({
+    slug: `peca-${id}`, name: `Peça ${id}`, category: "conjunto-short", cost, externalId: String(900000 + id), description: "Descrição",
+    images: [`https://cdn.x/${id}-a.jpg`],
+    colors: [{ id: "1", name: "Azul", hex: "#abd3de", images: [`https://cdn.x/${id}-a.jpg`], sizes: [{ size: "M", stock, sku: `${id}.1.M` }, { size: "g - R$85,00", stock: 0, sku: `${id}.1.G` }] }],
+  });
+  it("cria as peças com custo e preço, e pausa o que saiu do catálogo", async () => {
+    const r1 = await importMftFromBrowser({ items: Array.from({ length: 12 }, (_, i) => item(i, 50)), total: 12, errors: [] });
+    expect(r1).toMatchObject({ seen: 12, created: 12, costs: 12 });
+    const p = await q1<any>(`select p.*, ps.unit_cost from draum.products p join draum.product_suppliers ps on ps.product_id=p.id and ps.is_primary where p.external_id='900000'`);
+    expect(p).toMatchObject({ source: "mft", category: "conjuntos", modality: "pre", status: "ativo", slug: "peca-0" });
+    expect(Number(p.unit_cost)).toBe(50);
+    expect(Number(p.sale_price)).toBe(99.9);
+    const vs = await q<any>(`select size, supplier_stock from draum.product_variants where product_id=$1 order by size`, [p.id]);
+    expect(vs).toEqual([{ size: "G", supplier_stock: 0 }, { size: "M", supplier_stock: 10 }]);
+    // segunda leitura sem a peça 11: ela é pausada; custo novo é aplicado
+    const r2 = await importMftFromBrowser({ items: Array.from({ length: 11 }, (_, i) => item(i, i === 0 ? 60 : 50)), total: 11, errors: [] });
+    expect(r2.paused).toBeGreaterThanOrEqual(1);
+    expect((await q1<any>(`select status from draum.products where external_id='900011'`)).status).toBe("pausado");
+    expect(Number((await q1<any>(`select sale_price from draum.products where external_id='900000'`)).sale_price)).toBe(119.9);
+  });
+  it("ignora dados malformados e exige chave válida", async () => {
+    await expect(importMftFromBrowser({ items: [{ slug: "x", externalId: "abc", colors: [] }] })).rejects.toThrow(/apenas 0/);
+    const t = await getImportToken();
+    expect(t.length).toBeGreaterThanOrEqual(32);
+    expect(await checkImportToken(t)).toBe(true);
+    expect(await checkImportToken("x".repeat(40))).toBe(false);
+    expect(await getImportToken()).toBe(t);
   });
 });
 
