@@ -28,14 +28,7 @@ export default async function Loja({ searchParams }: { searchParams: Promise<{ t
 
   return (
     <div>
-      <section className="max-w-[1240px] mx-auto px-5 sm:px-8 pt-12 sm:pt-16 pb-8">
-        <div className="label mb-4">{hero.eyebrow}</div>
-        <h1 className="font-display text-[34px] sm:text-[52px] leading-[1.02] max-w-[820px]">{hero.title}</h1>
-        <div className="vao max-w-[420px] mt-8" />
-        <p className="mt-6 text-[14px] text-espresso max-w-[600px]">
-          {hero.text} Pedidos confirmados até sexta, 12h, chegam na <strong className="font-medium text-mineral">terça {delivery}</strong>, com entrega gratuita em Belém.
-        </p>
-      </section>
+      <Hero hero={hero} delivery={delivery} whatsapp={s.store.whatsapp} />
 
       <div className="sticky top-16 md:top-16 z-20 bg-offwhite/95 backdrop-blur border-y border-line">
         <div className="max-w-[1240px] mx-auto px-5 sm:px-8 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -141,20 +134,64 @@ function Card({ p, delivery }: { p: StoreCard; delivery: string }) {
 const fmtDay = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Belem" });
 const lastDay = (p: StorePromo) => fmtDay(new Date(p.endsAt.getTime() - 60_000));
 
-/** Texto de abertura: lançamento da loja + Black Friday, conforme a fase da campanha */
-function heroCopy(promos: StorePromo[], isVip: boolean, now = new Date()) {
+interface HeroCopy { kind: "bf" | "vip" | "normal"; eyebrow: string; giant?: [string, string]; title?: string; text: string; pitch?: string }
+
+/** Abertura da loja: lançamento + Black Friday, conforme a fase da campanha e quem está vendo (grupo VIP ou público) */
+function heroCopy(promos: StorePromo[], isVip: boolean, now = new Date()): HeroCopy {
   const vip = promos.find((p) => p.requiresVip);
   const pub = promos.find((p) => !p.requiresVip);
-  const active = activePromo(promos, isVip, now);
-  if (active && active.requiresVip)
-    return { eyebrow: "DRAUM Private Access · acesso antecipado", title: "Seu acesso antecipado está liberado.",
-      text: `${active.pct}% OFF em todas as peças até ${lastDay(active)}, antes de a Black Friday abrir para todo mundo.` };
-  if (active)
-    return { eyebrow: `Black Friday DRAUM · até ${lastDay(active)}`, title: `Nossa primeira Black Friday. ${active.pct}% OFF em tudo.`,
-      text: "Toda a loja com desconto, da pronta-entrega às peças sob encomenda." };
-  if (pub && now < pub.startsAt)
-    return { eyebrow: "Lançamento · Black Friday DRAUM", title: "A DRAUM chegou. E chega em movimento.",
-      text: `Nossa loja abre com a primeira Black Friday da marca: ${pub.pct}% OFF em todas as peças de ${fmtDay(pub.startsAt)} a ${lastDay(pub)}.`
-        + (vip && now < vip.endsAt ? ` Quem está no DRAUM Private Access compra antes, de ${fmtDay(vip.startsAt)} a ${lastDay(vip)}.` : "") };
-  return { eyebrow: "Coleção · Belém", title: "Movimento com presença, do treino ao fim de semana.", text: "Peças a pronta-entrega e uma seleção sob encomenda." };
+  if (isVip && vip && now <= vip.endsAt) {
+    if (now < vip.startsAt)
+      return { kind: "vip", eyebrow: "DRAUM Private Access", giant: ["Acesso", "garantido"],
+        text: `Os seus ${vip.pct}% OFF liberam em ${fmtDay(vip.startsAt)}, antes de todo mundo. Volte por este mesmo celular.` };
+    return { kind: "vip", eyebrow: `DRAUM Private Access · até ${lastDay(vip)}`, giant: ["Acesso", "antecipado"],
+      text: `${vip.pct}% OFF em todas as peças, de ${fmtDay(vip.startsAt)} a ${lastDay(vip)}. Você chega antes e com ${pub ? `o dobro do desconto de quem está fora do grupo` : "desconto exclusivo"}.` };
+  }
+  if (pub && now <= pub.endsAt) {
+    const live = now >= pub.startsAt;
+    const pitch = vip && now <= vip.endsAt ? `No DRAUM Private Access é ${vip.pct}% OFF${now < vip.startsAt ? `, a partir de ${fmtDay(vip.startsAt)}` : ""}.` : undefined;
+    return { kind: "bf", eyebrow: live ? `Black Friday DRAUM · até ${lastDay(pub)}` : "Lançamento · Black Friday DRAUM", giant: ["Black", "Friday"],
+      text: live ? `${pub.pct}% OFF em todas as peças até ${lastDay(pub)}.`
+        : `A DRAUM chegou, e chega com a primeira Black Friday da marca: ${pub.pct}% OFF em todas as peças, de ${fmtDay(pub.startsAt)} a ${lastDay(pub)}.`,
+      pitch };
+  }
+  return { kind: "normal", eyebrow: "Coleção · Belém", title: "Movimento com presença, do treino ao fim de semana.", text: "Peças a pronta-entrega e uma seleção sob encomenda." };
+}
+
+function Hero({ hero, delivery, whatsapp }: { hero: HeroCopy; delivery: string; whatsapp: string }) {
+  const deliveryLine = <>Pedidos confirmados até sexta, 12h, chegam na terça {delivery}, com entrega gratuita em Belém.</>;
+  if (hero.kind === "normal") {
+    return (
+      <section className="max-w-[1240px] mx-auto px-5 sm:px-8 pt-12 sm:pt-16 pb-8">
+        <div className="label mb-4">{hero.eyebrow}</div>
+        <h1 className="font-display text-[34px] sm:text-[52px] leading-[1.02] max-w-[820px]">{hero.title}</h1>
+        <div className="vao max-w-[420px] mt-8" />
+        <p className="mt-6 text-[14px] text-espresso max-w-[600px]">{hero.text} {deliveryLine}</p>
+      </section>
+    );
+  }
+  const join = whatsapp ? `https://wa.me/${whatsapp}?text=${encodeURIComponent("Quero entrar no DRAUM PRIVATE ACCESS")}` : null;
+  return (
+    <section className="bf-band overflow-hidden">
+      <div className="max-w-[1240px] mx-auto px-5 sm:px-8 pt-10 sm:pt-14 pb-10 sm:pb-14">
+        <div className="font-mono text-[10.5px] tracking-[0.18em] uppercase opacity-60 mb-6">{hero.eyebrow}</div>
+        <h1 className={`bf-giant ${Math.max(...hero.giant!.map((w) => w.length)) > 7 ? "text-[10.5vw] lg:text-[124px]" : "text-[19vw] sm:text-[15vw] lg:text-[176px]"}`}>
+          <span className="block">{hero.giant![0]}</span>
+          <span className="block">{hero.giant![1]}</span>
+        </h1>
+        <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_1fr] items-end">
+          <div className="space-y-3">
+            <p className="text-[17px] sm:text-[19px] leading-snug max-w-[560px]">{hero.text}</p>
+            <p className="text-[12.5px] opacity-60 max-w-[520px]">{deliveryLine}</p>
+          </div>
+          {hero.kind === "bf" && hero.pitch && (
+            <div className="border border-current/30 p-5 flex flex-col sm:flex-row sm:items-center gap-4 justify-between" style={{ borderColor: "rgba(243,240,232,.25)" }}>
+              <p className="text-[13.5px] leading-snug"><span className="font-mono text-[10px] tracking-[0.16em] uppercase opacity-60 block mb-1">Quer mais?</span>{hero.pitch}</p>
+              {join && <a href={join} className="shrink-0 h-11 px-5 inline-flex items-center justify-center text-[12.5px] tracking-wide" style={{ background: "#F3F0E8", color: "#111210" }}>Quero entrar no grupo</a>}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
 }
