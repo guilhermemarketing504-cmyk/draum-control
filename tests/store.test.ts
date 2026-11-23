@@ -81,6 +81,7 @@ async function mftProduct(cost: number | null, stock = 5) {
     [{ color: "Azul", size: "M" }, { color: "Azul", size: "G" }], `MFT-${ext}`);
   await q(`update draum.products set source='mft', external_id=$2 where id=$1`, [p.id, ext]);
   await q(`update draum.product_variants set supplier_stock = $2 where product_id = $1`, [p.id, stock]);
+  await q(`insert into draum.product_images(product_id, url) values ($1, 'https://cdn.x/foto.jpg')`, [p.id]);
   await q(`insert into draum.product_suppliers(product_id, supplier_id, unit_cost, lead_days, availability_checked_at, is_primary) values ($1,$2,0,2,now(),true)`, [p.id, sup!.id]);
   if (cost != null) await saveMftCosts(admin, [{ productId: p.id, cost }]);
   const variants = await q<{ id: number; size: string }>(`select id, size from draum.product_variants where product_id=$1 order by size desc`, [p.id]);
@@ -173,6 +174,21 @@ describe("Leitura da MFT pelo navegador", () => {
     expect(r2.paused).toBeGreaterThanOrEqual(1);
     expect((await q1<any>(`select status from draum.products where external_id='900011'`)).status).toBe("pausado");
     expect(Number((await q1<any>(`select sale_price from draum.products where external_id='900000'`)).sale_price)).toBe(119.9);
+  });
+  it("falha ao abrir uma peça que continua na vitrine não a tira da loja", async () => {
+    const base = Array.from({ length: 12 }, (_, i) => item(100 + i, 50));
+    await importMftFromBrowser({ items: base, total: 12, errors: [], listed: base.map((b) => b.slug) });
+    const r = await importMftFromBrowser({ items: base.slice(0, 11), total: 12, errors: ["peca-111: Failed to fetch"], listed: base.map((b) => b.slug) });
+    expect(r.paused).toBe(0);
+    expect((await q1<any>(`select status from draum.products where external_id='900111'`)).status).toBe("ativo");
+  });
+  it("peça da distribuidora sem foto fica fora da loja", async () => {
+    const semFoto = { ...item(200, 50), images: [], colors: [{ ...item(200, 50).colors[0], images: [] }] };
+    await importMftFromBrowser({ items: [...Array.from({ length: 11 }, (_, i) => item(300 + i, 50)), semFoto], total: 12, errors: [] });
+    const list = await listStoreProducts();
+    expect(list.find((p) => p.slug === "peca-200")).toBeUndefined();
+    expect(list.find((p) => p.slug === "peca-300")).toBeDefined();
+    expect(await getStoreProduct("peca-200")).toBeNull();
   });
   it("ignora dados malformados e exige chave válida", async () => {
     await expect(importMftFromBrowser({ items: [{ slug: "x", externalId: "abc", colors: [] }] })).rejects.toThrow(/apenas 0/);

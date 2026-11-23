@@ -201,11 +201,12 @@ export async function importMftFromBrowser(raw: unknown): Promise<SyncReport> {
     },
     cost: Number.isFinite(Number(it.cost)) && Number(it.cost) > 0 ? Math.round(Number(it.cost) * 100) / 100 : null,
   })).filter((i) => /^\d+$/.test(i.parsed.externalId) && i.listed.slug && i.parsed.colors.length);
-  return runSync(null, "navegador", async () => ({ items, errors: (body.errors ?? []).map(String).slice(0, 50), total: Number(body.total) || items.length }));
+  const listed = Array.isArray((body as any).listed) ? ((body as any).listed as unknown[]).map((x) => MFT_BASE + String(x) + "/") : null;
+  return runSync(null, "navegador", async () => ({ items, errors: (body.errors ?? []).map(String).slice(0, 50), total: Number(body.total) || items.length, listedUrls: listed }));
 }
 
 async function runSync(ctx: Ctx | null, origin: "servidor" | "navegador",
-  gather: () => Promise<{ items: CatalogItem[]; errors: string[]; total: number }>): Promise<SyncReport> {
+  gather: () => Promise<{ items: CatalogItem[]; errors: string[]; total: number; listedUrls?: string[] | null }>): Promise<SyncReport> {
   if (running) throw new BusinessError("Já existe uma sincronização em andamento. Aguarde alguns minutos.");
   running = true;
   const s = await getSettings();
@@ -215,7 +216,7 @@ async function runSync(ctx: Ctx | null, origin: "servidor" | "navegador",
   const run = await q1<{ id: number }>(`insert into draum.supplier_sync_runs(supplier_id, logged_in) values ($1,$2) returning id`, [supplierId, origin === "navegador"]);
   const report: SyncReport = { runId: run!.id, seen: 0, created: 0, updated: 0, paused: 0, withoutCost: 0, errors: [] };
   try {
-    const { items, errors, total } = await gather();
+    const { items, errors, total, listedUrls } = await gather();
     report.errors.push(...errors);
     if (items.length < 10) throw new Error(`Leitura com apenas ${items.length} peças. Nada foi alterado.`);
     const seenIds: string[] = [];
@@ -237,8 +238,15 @@ async function runSync(ctx: Ctx | null, origin: "servidor" | "navegador",
     }
     report.costs = costs;
     if (costs) await tx((c) => repriceMft(c, s.store).then(() => undefined));
-    // Peças que saíram do catálogo da MFT: pausa (só quando a leitura foi completa)
-    if (report.errors.length <= Math.max(5, total * 0.1) && report.seen >= total * 0.9) {
+    // Peças que saíram do catálogo da MFT: pausa. Com a lista da vitrine (leitura pelo navegador), só pausa o que
+    // não está mais na vitrine; uma falha ao abrir a página de uma peça não a tira da loja.
+    if (listedUrls && listedUrls.length >= 10) {
+      const paused = await q<{ id: number }>(
+        `update draum.products set status = 'pausado', updated_at = now()
+          where source = 'mft' and status = 'ativo' and not (external_id = any($1)) and not (coalesce(external_url, '') = any($2)) returning id`,
+        [seenIds, listedUrls]);
+      report.paused = paused.length;
+    } else if (report.errors.length <= Math.max(5, total * 0.1) && report.seen >= total * 0.9) {
       const paused = await q<{ id: number }>(
         `update draum.products set status = 'pausado', updated_at = now()
           where source = 'mft' and status = 'ativo' and not (external_id = any($1)) returning id`, [seenIds]);

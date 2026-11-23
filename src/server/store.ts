@@ -90,6 +90,7 @@ export async function listStoreProducts(): Promise<StoreCard[]> {
   for (const p of products) {
     const vs = (byProduct.get(p.id) ?? []).map((v) => ({ ...v, mode: variantMode(v, s.availability_valid_days) })).filter((v) => v.mode);
     if (!vs.length) continue;
+    if (p.source === "mft" && !p.img && !p.image_url) continue; // peça da distribuidora sem foto não vende: fica fora até ganhar foto
     const colors = new Map<string, string | null>();
     vs.forEach((v) => colors.set(v.color, v.color_hex ?? colors.get(v.color) ?? null));
     const pronta = vs.filter((v) => v.mode === "pronta");
@@ -120,6 +121,7 @@ export async function getStoreProduct(slug: string) {
   const images = (await q<any>(`select id, url, color from draum.product_images where product_id = $1 order by position, id`, [p.id]))
     .map((im) => ({ src: imageSrc(im), color: im.color as string | null }));
   if (!images.length && p.image_url) images.push({ src: p.image_url, color: null });
+  if (!images.length && p.source === "mft") return null;
   return {
     product: { id: p.id, slug: p.slug, name: p.name, category: p.category, categoryLabel: CATEGORIES[p.category]?.label ?? p.category,
       description: p.description as string | null, price: Number(p.sale_price), promoPrice: p.promo_price != null ? Number(p.promo_price) : null },
