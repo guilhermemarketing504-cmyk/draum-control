@@ -1,7 +1,8 @@
 "use server";
 import { act, formObj, bool, type ActionResult } from "@/lib/action";
 import { saveStoreSettings } from "@/server/store";
-import { syncMft, saveMftCosts } from "@/server/mft";
+import { syncMft, saveMftCosts, isSyncRunning } from "@/server/mft";
+import { requireAdmin, BusinessError } from "@/server/core";
 import { addProductImage, removeProductImage } from "@/server/images";
 
 export async function saveStoreSettingsAction(_: ActionResult | null, fd: FormData) {
@@ -12,10 +13,12 @@ export async function saveStoreSettingsAction(_: ActionResult | null, fd: FormDa
 }
 
 export async function syncMftAction(_: ActionResult | null, _fd: FormData) {
+  // Roda em segundo plano: a leitura completa da MFT leva alguns minutos por causa do limite de acessos do site
   return act(async (ctx) => {
-    const r = await syncMft(ctx);
-    return r;
-  }, { message: "Sincronização concluída." });
+    requireAdmin(ctx);
+    if (isSyncRunning()) throw new BusinessError("Já existe uma sincronização em andamento. Atualize a página em alguns minutos.");
+    void syncMft(ctx).catch((e) => console.error("[mft] sincronização manual:", (e as Error).message));
+  }, { message: "Sincronização iniciada. Leva de 4 a 6 minutos; atualize a página para ver o resultado." });
 }
 
 export async function saveMftCostsAction(_: ActionResult | null, fd: FormData) {
