@@ -170,7 +170,7 @@ export async function cartLines(items: { variantId: number; qty: number }[], isV
   const s = await getSettings();
   const promo = activePromo(await storePromotions(), isVip);
   const promoInfo = promo ? { id: promo.id, name: promo.name, pct: promo.pct } : null;
-  if (!items.length) return { lines: [], deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s), whatsappReady: !!s.store.whatsapp, promo: promoInfo };
+  if (!items.length) return { lines: [], deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s), cutoffAt: null as string | null, whatsappReady: !!s.store.whatsapp, promo: promoInfo, onlinePayment: !!s.store.infinitepay_handle };
   const rows = await q<any>(
     `${VARIANT_SQL} and v.id = any($1) and p.status = 'ativo' and p.store_visible`, [items.map((i) => i.variantId)]);
   const info = await q<any>(
@@ -195,7 +195,7 @@ export async function cartLines(items: { variantId: number; qty: number }[], isV
       image: (meta.image ?? meta.image_url) as string | null, mode, unitPrice: unit, listPrice: base, onPromo, lineTotal, qty, maxQty };
   }).filter(Boolean) as any[];
   const dd = storeDeliveryDate(new Date(), s);
-  return { lines, deliveryDate: dd, cutoff: cutoffLabel(s), cutoffAt: dd ? cutoffFor(dd, s).toISOString() : null, whatsappReady: !!s.store.whatsapp, promo: promoInfo };
+  return { lines, deliveryDate: dd, cutoff: cutoffLabel(s), cutoffAt: dd ? cutoffFor(dd, s).toISOString() : null, whatsappReady: !!s.store.whatsapp, promo: promoInfo, onlinePayment: !!s.store.infinitepay_handle };
 }
 
 // ───────── Fechamento do pedido ─────────
@@ -286,13 +286,15 @@ const storeSettingsSchema = z.object({
   price_ending: z.coerce.number().min(0).max(0.99),
   mft_lead_days: z.coerce.number().int().min(0).max(30),
   mft_enabled: z.boolean(),
+  infinitepay_handle: z.string().trim().max(60).optional().nullable(),
 });
 
 export async function saveStoreSettings(ctx: Ctx, raw: unknown) {
   requireAdmin(ctx);
   const o = storeSettingsSchema.parse(raw);
   const cur = (await getSettings()).store ?? STORE_DEFAULTS;
-  const next: StoreSettings = { ...cur, ...o, whatsapp: o.whatsapp ? normalizeWhatsapp(o.whatsapp)! : "" };
+  const next: StoreSettings = { ...cur, ...o, whatsapp: o.whatsapp ? normalizeWhatsapp(o.whatsapp)! : "",
+    infinitepay_handle: (o.infinitepay_handle ?? "").trim().replace(/^\$/, "") };
   await tx(async (c) => {
     await c.query(`insert into draum.settings(key, value, updated_at, updated_by) values ('store',$1,now(),$2)
       on conflict (key) do update set value=excluded.value, updated_at=now(), updated_by=excluded.updated_by`, [JSON.stringify(next), ctx.userId]);

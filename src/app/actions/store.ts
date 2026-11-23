@@ -9,6 +9,7 @@ export async function saveStoreSettingsAction(_: ActionResult | null, fd: FormDa
   const o = formObj(fd);
   return act((ctx) => saveStoreSettings(ctx, {
     whatsapp: o.whatsapp, margin_pct: o.margin_pct, price_ending: o.price_ending ?? 0, mft_lead_days: o.mft_lead_days, mft_enabled: bool(o.mft_enabled),
+    infinitepay_handle: o.infinitepay_handle ?? "",
   }), { message: "Loja atualizada." });
 }
 

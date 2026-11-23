@@ -1,5 +1,6 @@
 "use server";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { createPaymentLink } from "@/server/infinitepay";
 import { cartLines, placeStoreOrder, registerLead, isVipCode } from "@/server/store";
 import { errorMessage } from "@/lib/action";
 import { VIP_COOKIE, vipFromCookie } from "./vip";
@@ -12,12 +13,27 @@ export async function cartAction(items: { variantId: number; qty: number }[]) {
   return cartLines(clean, await vipFromCookie());
 }
 
+async function baseUrl() {
+  const h = await headers();
+  return `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+}
+
 export async function checkoutAction(input: unknown) {
+  let order;
   try {
-    return { ok: true as const, ...(await placeStoreOrder(input, await vipFromCookie())) };
+    order = await placeStoreOrder(input, await vipFromCookie());
   } catch (e) {
     return { ok: false as const, error: errorMessage(e) };
   }
+  // Pagamento online (Pix ou cartão): se o link falhar, a cliente segue pelo WhatsApp com o pedido já criado
+  if ((input as any)?.payOnline) {
+    try {
+      return { ok: true as const, ...order, paymentUrl: await createPaymentLink(order.number, await baseUrl()) };
+    } catch (e) {
+      return { ok: true as const, ...order, paymentUrl: null, paymentError: errorMessage(e) };
+    }
+  }
+  return { ok: true as const, ...order, paymentUrl: null };
 }
 
 /** Cadastro na lista de novidades (página inicial) */

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { Minus, Plus, X, MessageCircle } from "lucide-react";
+import { Minus, Plus, X, MessageCircle, CreditCard } from "lucide-react";
 import { useBag, writeBag, type BagItem } from "../bag";
 import { cartAction, checkoutAction } from "../actions";
 import { DeliveryPromise } from "../delivery-promise";
@@ -16,10 +16,11 @@ function newKey() {
 
 export function Bag() {
   const bag = useBag();
-  const [data, setData] = useState<{ lines: Line[]; deliveryDate: string | null; cutoff: string; cutoffAt: string | null; whatsappReady: boolean; promo: { name: string; pct: number } | null } | null>(null);
+  const [data, setData] = useState<{ lines: Line[]; deliveryDate: string | null; cutoff: string; cutoffAt: string | null; whatsappReady: boolean; promo: { name: string; pct: number } | null; onlinePayment: boolean } | null>(null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ number: string; whatsappUrl: string; total: number; deliveryDate: string } | null>(null);
+  const [done, setDone] = useState<{ number: string; whatsappUrl: string; total: number; deliveryDate: string; paymentError?: string } | null>(null);
+  const [payOnline, setPayOnline] = useState(true);
   const [fulfillment, setFulfillment] = useState<"entrega_local" | "retirada">("entrega_local");
   const key = useRef<string>("");
 
@@ -47,14 +48,16 @@ export function Bag() {
       name: String(fd.get("name") ?? ""), whatsapp: String(fd.get("whatsapp") ?? ""), email: String(fd.get("email") ?? "") || null, marketing: fd.get("marketing") === "on",
       fulfillment, neighborhood: String(fd.get("neighborhood") ?? "") || null, address: String(fd.get("address") ?? "") || null,
       notes: String(fd.get("notes") ?? "") || null, acceptPre: fd.get("acceptPre") === "on", idempotencyKey: key.current,
+      payOnline: !!data?.onlinePayment && payOnline,
     };
     start(async () => {
       const r = await checkoutAction(payload);
       if (!r.ok) { setError(r.error); return; }
-      setDone(r);
       writeBag([]);
       key.current = "";
-      window.location.href = r.whatsappUrl;
+      if (r.paymentUrl) { window.location.href = r.paymentUrl; return; }
+      setDone({ ...r, paymentError: (r as any).paymentError });
+      if (!(r as any).paymentError) window.location.href = r.whatsappUrl;
     });
   }
 
@@ -63,6 +66,7 @@ export function Bag() {
       <div className="max-w-[560px] border border-line bg-paper p-8 space-y-5">
         <div className="label">Pedido {done.number}</div>
         <h2 className="font-display text-[26px] leading-tight">Recebemos seu pedido.</h2>
+        {done.paymentError && <p className="text-[13px] text-warn border border-warn/30 bg-warn/5 px-3 py-2">{done.paymentError} Seu pedido está guardado: finalize o pagamento com a gente pelo WhatsApp.</p>}
         <p className="text-[13.5px] text-espresso">
           Agora é só enviar a mensagem no WhatsApp para combinarmos o pagamento (Pix ou cartão). Assim que o pagamento for confirmado, sua entrega fica marcada para {longDay(done.deliveryDate)}.
         </p>
@@ -160,6 +164,20 @@ export function Bag() {
             <span>Entendo que as peças <strong className="font-medium text-mineral">sob encomenda</strong> são encomendadas após a confirmação do pagamento e chegam na {longDay(data.deliveryDate)}.</span>
           </label>
         )}
+        {data.onlinePayment && (
+          <div className="field">
+            <span>Pagamento</span>
+            <div className="grid gap-2">
+              {([[true, "Pagar agora", "Pix ou cartão em até 12x, com confirmação na hora"], [false, "Combinar pelo WhatsApp", "A gente envia o Pix ou o link de pagamento"]] as const).map(([v, t, d]) => (
+                <button type="button" key={String(v)} onClick={() => setPayOnline(v)}
+                  className={`text-left border px-4 py-3 ${payOnline === v ? "border-mineral bg-mineral text-offwhite" : "border-line bg-white/70"}`}>
+                  <span className="block text-[13px] font-medium">{t}</span>
+                  <span className={`block text-[11.5px] ${payOnline === v ? "opacity-70" : "text-muted"}`}>{d}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <label className="flex gap-3 items-start text-[12.5px] text-espresso">
           <input type="checkbox" name="marketing" className="mt-1 accent-mineral" />
           <span>Quero receber novidades e ofertas da DRAUM por WhatsApp e e-mail.</span>
@@ -168,9 +186,13 @@ export function Bag() {
         {!data.whatsappReady && <div className="border border-warn/30 bg-warn/5 text-warn text-[12.5px] px-3 py-2">A loja ainda está sendo configurada e não está recebendo pedidos.</div>}
         <button disabled={pending || !lines.length || unavailable.length > 0 || !data.whatsappReady}
           className="w-full h-12 bg-mineral text-offwhite text-[13.5px] inline-flex items-center justify-center gap-2 disabled:opacity-40">
-          <MessageCircle size={17} strokeWidth={1.5} /> {pending ? "Enviando…" : "Finalizar pelo WhatsApp"}
+          {data.onlinePayment && payOnline
+            ? <><CreditCard size={17} strokeWidth={1.5} /> {pending ? "Abrindo o pagamento…" : `Pagar ${brl(total)}`}</>
+            : <><MessageCircle size={17} strokeWidth={1.5} /> {pending ? "Enviando…" : "Finalizar pelo WhatsApp"}</>}
         </button>
-        <p className="text-[11.5px] text-muted">Você será levada ao WhatsApp da DRAUM com o resumo do pedido para combinar o pagamento (Pix ou cartão). Seus dados são usados apenas para este pedido e para falarmos com você.</p>
+        <p className="text-[11.5px] text-muted">{data.onlinePayment && payOnline
+          ? "Você será levada ao pagamento seguro da InfinitePay. Depois, é só combinar a entrega com a gente no WhatsApp."
+          : "Você será levada ao WhatsApp da DRAUM com o resumo do pedido para combinar o pagamento (Pix ou cartão)."} Seus dados são usados apenas para este pedido e para falarmos com você.</p>
       </form>
     </div>
   );
