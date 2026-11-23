@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getStoreProduct } from "@/server/store";
 import { Buy } from "./buy";
+import { vipFromCookie } from "../vip";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const r = await getStoreProduct((await params).slug);
+  const r = await getStoreProduct((await params).slug, await vipFromCookie());
   if (!r) notFound();
   const { product, variants, images, deliveryDate, cutoff } = r;
   const sellable = variants.filter((v) => v.mode);
@@ -23,7 +24,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         <Link href={`/loja?cat=${product.category}`} className="hover:text-mineral">{product.categoryLabel}</Link>
       </nav>
       <Buy
-        product={{ name: product.name, price: product.price, promoPrice: product.promoPrice, description: product.description }}
+        product={{ name: product.name, price: product.price, promoPrice: product.promoPrice, description: product.description,
+          promoLabel: product.promoPct != null && product.promoEnds
+            ? `${product.promoName?.includes("VIP") ? "Acesso antecipado VIP" : "Black Friday"} · ${product.promoPct}% OFF até ${new Date(new Date(product.promoEnds).getTime() - 60_000).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Belem" })}`
+            : null }}
         variants={sellable.map((v) => ({ id: v.id, color: v.color, hex: v.hex, size: v.size, mode: v.mode!, available: v.available }))}
         images={images}
         deliveryDate={deliveryDate}

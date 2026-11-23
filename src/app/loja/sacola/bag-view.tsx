@@ -5,7 +5,7 @@ import { Minus, Plus, X, MessageCircle } from "lucide-react";
 import { useBag, writeBag, type BagItem } from "../bag";
 import { cartAction, checkoutAction } from "../actions";
 
-type Line = { variantId: number; name: string; slug: string; color: string; size: string; image: string | null; mode: "pronta" | "pre" | null; unitPrice: number; qty: number; maxQty: number };
+type Line = { variantId: number; name: string; slug: string; color: string; size: string; image: string | null; mode: "pronta" | "pre" | null; unitPrice: number; listPrice: number; onPromo: boolean; lineTotal: number; qty: number; maxQty: number };
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const longDay = (iso: string | null) => iso ? new Date(iso + "T12:00:00Z").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", timeZone: "UTC" }) : "";
 
@@ -15,7 +15,7 @@ function newKey() {
 
 export function Bag() {
   const bag = useBag();
-  const [data, setData] = useState<{ lines: Line[]; deliveryDate: string | null; cutoff: string; whatsappReady: boolean } | null>(null);
+  const [data, setData] = useState<{ lines: Line[]; deliveryDate: string | null; cutoff: string; whatsappReady: boolean; promo: { name: string; pct: number } | null } | null>(null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ number: string; whatsappUrl: string; total: number; deliveryDate: string } | null>(null);
@@ -28,7 +28,8 @@ export function Bag() {
   }, [bag]);
 
   const lines = data?.lines ?? [];
-  const total = useMemo(() => lines.reduce((a, l) => a + l.unitPrice * l.qty, 0), [lines]);
+  const total = useMemo(() => lines.reduce((a, l) => a + l.lineTotal, 0), [lines]);
+  const fullTotal = useMemo(() => lines.reduce((a, l) => a + l.listPrice * l.qty, 0), [lines]);
   const hasPre = lines.some((l) => l.mode === "pre");
   const unavailable = lines.filter((l) => !l.mode || l.qty < 1);
 
@@ -42,7 +43,7 @@ export function Bag() {
     if (!key.current) key.current = newKey();
     const payload = {
       items: lines.filter((l) => l.mode && l.qty > 0).map((l) => ({ variantId: l.variantId, qty: l.qty })),
-      name: String(fd.get("name") ?? ""), whatsapp: String(fd.get("whatsapp") ?? ""),
+      name: String(fd.get("name") ?? ""), whatsapp: String(fd.get("whatsapp") ?? ""), email: String(fd.get("email") ?? "") || null, marketing: fd.get("marketing") === "on",
       fulfillment, neighborhood: String(fd.get("neighborhood") ?? "") || null, address: String(fd.get("address") ?? "") || null,
       notes: String(fd.get("notes") ?? "") || null, acceptPre: fd.get("acceptPre") === "on", idempotencyKey: key.current,
     };
@@ -109,12 +110,21 @@ export function Bag() {
                       <button className="w-8 h-8 flex items-center justify-center disabled:opacity-30" disabled={l.qty >= l.maxQty} onClick={() => setQty(l.variantId, l.qty + 1)} aria-label="Aumentar"><Plus size={13} /></button>
                     </div>
                   ) : <span />}
-                  <span className="text-[13.5px] num">{brl(l.unitPrice * l.qty)}</span>
+                  <span className="text-[13.5px] num text-right">
+                    {l.onPromo && <span className="block text-[11.5px] text-muted line-through">{brl(l.listPrice * l.qty)}</span>}
+                    {brl(l.lineTotal)}
+                  </span>
                 </div>
               </div>
             </li>
           ))}
         </ul>
+        {data.promo && lines.some((l) => l.onPromo) && (
+          <div className="flex justify-between items-baseline pt-5 text-[13px] text-espresso">
+            <span>{data.promo.name} · {data.promo.pct}% OFF</span>
+            <span className="num">− {brl(fullTotal - total)}</span>
+          </div>
+        )}
         <div className="flex justify-between items-baseline pt-5">
           <span className="label">Total</span>
           <span className="text-[20px] num">{brl(total)}</span>
@@ -128,6 +138,7 @@ export function Bag() {
         <div className="label">Seus dados</div>
         <label className="field"><span>Nome completo</span><input className="input h-11" name="name" required minLength={3} autoComplete="name" /></label>
         <label className="field"><span>WhatsApp com DDD</span><input className="input h-11" name="whatsapp" required inputMode="tel" placeholder="(91) 9 0000-0000" autoComplete="tel" /></label>
+        <label className="field"><span>E-mail (opcional)</span><input className="input h-11" name="email" type="email" autoComplete="email" /></label>
         <div className="field">
           <span>Como prefere receber</span>
           <div className="grid grid-cols-2 gap-2">
@@ -150,6 +161,10 @@ export function Bag() {
             <span>Entendo que as peças <strong className="font-medium text-mineral">sob encomenda</strong> são encomendadas após a confirmação do pagamento e chegam na {longDay(data.deliveryDate)}.</span>
           </label>
         )}
+        <label className="flex gap-3 items-start text-[12.5px] text-espresso">
+          <input type="checkbox" name="marketing" className="mt-1 accent-mineral" />
+          <span>Quero receber novidades e ofertas da DRAUM por WhatsApp e e-mail.</span>
+        </label>
         {error && <div className="border border-crit/30 bg-crit/5 text-crit text-[12.5px] px-3 py-2">{error}</div>}
         {!data.whatsappReady && <div className="border border-warn/30 bg-warn/5 text-warn text-[12.5px] px-3 py-2">A loja ainda está sendo configurada e não está recebendo pedidos.</div>}
         <button disabled={pending || !lines.length || unavailable.length > 0 || !data.whatsappReady}

@@ -16,6 +16,34 @@ import { CATEGORIES } from "./products";
 
 export type StoreMode = "pronta" | "pre";
 
+// ───────── Promoções da loja (Black Friday) ─────────
+export interface StorePromo { id: number; name: string; pct: number; requiresVip: boolean; startsAt: Date; endsAt: Date; productIds: number[] | null }
+
+/** Promoções de Black Friday cadastradas no CONTROL (as da loja). */
+export async function storePromotions(): Promise<StorePromo[]> {
+  const rows = await q<any>(
+    `select p.id, p.name, p.pct, p.requires_vip, p.starts_at, p.ends_at, p.all_products,
+            (select array_agg(product_id) from draum.promotion_products pp where pp.promotion_id = p.id) as product_ids
+       from draum.promotions p where p.kind = 'black_friday' and p.active and p.min_items <= 1 and p.coupon_code is null
+      order by p.starts_at`);
+  return rows.map((r) => ({ id: r.id, name: r.name, pct: Number(r.pct), requiresVip: r.requires_vip, startsAt: new Date(r.starts_at), endsAt: new Date(r.ends_at),
+    productIds: r.all_products ? null : (r.product_ids ?? []).map(Number) }));
+}
+
+/** Melhor promoção vigente para a cliente (VIP vê também a do acesso antecipado) */
+export function activePromo(promos: StorePromo[], isVip: boolean, now = new Date()) {
+  return promos.filter((p) => now >= p.startsAt && now <= p.endsAt && (!p.requiresVip || isVip)).sort((a, b) => b.pct - a.pct)[0] ?? null;
+}
+const promoApplies = (p: StorePromo | null, productId: number) => !!p && (p.productIds == null || p.productIds.includes(productId));
+const discounted = (price: number, pct: number) => round2(price - round2((price * pct) / 100));
+
+/** Link do acesso antecipado: o cookie guarda o código do grupo VIP */
+export async function isVipCode(code: string | undefined | null) {
+  if (!code) return false;
+  const s = await getSettings();
+  return !!s.store.vip_code && code === s.store.vip_code;
+}
+
 /** Preço de venda a partir do custo: margem sobre o preço (custo ÷ (1 − margem)), terminando em ,90.
     Arredonda para o ,90 imediatamente acima; se o valor exato estiver no máximo R$ 0,10 acima de um ,90, usa esse
     (ex.: custo 85 → 170,00 → R$ 169,90). Assim a diferença para a margem exata nunca passa de 10 centavos. */
@@ -66,15 +94,16 @@ function variantMode(v: any, validDays: number, now = new Date()): StoreMode | n
 }
 
 export interface StoreCard {
-  id: number; slug: string; name: string; category: string; categoryLabel: string; price: number; promoPrice: number | null;
+  id: number; slug: string; name: string; category: string; categoryLabel: string; price: number; promoPrice: number | null; promoPct: number | null;
   image: string | null; colors: { name: string; hex: string | null }[]; sizes: string[];
   hasPronta: boolean; hasPre: boolean; prontaUnits: number; unique: boolean;
 }
 
 export const imageSrc = (img: { id: number; url: string | null }) => img.url ?? `/loja/img/${img.id}`;
 
-export async function listStoreProducts(): Promise<StoreCard[]> {
+export async function listStoreProducts(isVip = false): Promise<StoreCard[]> {
   const s = await getSettings();
+  const promo = activePromo(await storePromotions(), isVip);
   const products = await q<any>(
     `select p.id, p.slug, p.name, p.category, p.sale_price, p.promo_price, p.image_url, p.source, p.created_at,
             (select json_build_object('id', im.id, 'url', im.url) from draum.product_images im where im.product_id = p.id order by im.position, im.id limit 1) as img
@@ -97,7 +126,9 @@ export async function listStoreProducts(): Promise<StoreCard[]> {
     const prontaUnits = pronta.reduce((a, v) => a + Number(v.available), 0);
     cards.push({
       id: p.id, slug: p.slug, name: p.name, category: p.category, categoryLabel: CATEGORIES[p.category]?.label ?? p.category,
-      price: Number(p.sale_price), promoPrice: p.promo_price != null ? Number(p.promo_price) : null,
+      price: Number(p.sale_price),
+      promoPrice: promoApplies(promo, p.id) ? discounted(Number(p.sale_price), promo!.pct) : p.promo_price != null ? Number(p.promo_price) : null,
+      promoPct: promoApplies(promo, p.id) ? promo!.pct : null,
       image: p.img ? imageSrc(p.img) : p.image_url ?? null,
       colors: [...colors].map(([name, hex]) => ({ name, hex })),
       sizes: [...new Set(vs.map((v) => v.size))].sort((a, b) => sizeRank(a) - sizeRank(b)),
@@ -108,8 +139,9 @@ export async function listStoreProducts(): Promise<StoreCard[]> {
   return cards;
 }
 
-export async function getStoreProduct(slug: string) {
+export async function getStoreProduct(slug: string, isVip = false) {
   const s = await getSettings();
+  const promo = activePromo(await storePromotions(), isVip);
   const p = await q1<any>(
     `select p.* from draum.products p where p.slug = $1 and p.status = 'ativo' and p.store_visible and ($2::boolean or p.source <> 'mft')`,
     [slug, s.store.mft_enabled]);
@@ -124,19 +156,24 @@ export async function getStoreProduct(slug: string) {
   if (!images.length && p.source === "mft") return null;
   return {
     product: { id: p.id, slug: p.slug, name: p.name, category: p.category, categoryLabel: CATEGORIES[p.category]?.label ?? p.category,
-      description: p.description as string | null, price: Number(p.sale_price), promoPrice: p.promo_price != null ? Number(p.promo_price) : null },
+      description: p.description as string | null, price: Number(p.sale_price),
+      promoPrice: promoApplies(promo, p.id) ? discounted(Number(p.sale_price), promo!.pct) : p.promo_price != null ? Number(p.promo_price) : null,
+      promoPct: promoApplies(promo, p.id) ? promo!.pct : null, promoName: promoApplies(promo, p.id) ? promo!.name : null,
+      promoEnds: promoApplies(promo, p.id) ? promo!.endsAt.toISOString() : null },
     variants, images, deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s),
   };
 }
 
 /** Dados do carrinho (preços e disponibilidade sempre vindos do servidor) */
-export async function cartLines(items: { variantId: number; qty: number }[]) {
+export async function cartLines(items: { variantId: number; qty: number }[], isVip = false) {
   const s = await getSettings();
-  if (!items.length) return { lines: [], deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s), whatsappReady: !!s.store.whatsapp };
+  const promo = activePromo(await storePromotions(), isVip);
+  const promoInfo = promo ? { id: promo.id, name: promo.name, pct: promo.pct } : null;
+  if (!items.length) return { lines: [], deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s), whatsappReady: !!s.store.whatsapp, promo: promoInfo };
   const rows = await q<any>(
     `${VARIANT_SQL} and v.id = any($1) and p.status = 'ativo' and p.store_visible`, [items.map((i) => i.variantId)]);
   const info = await q<any>(
-    `select v.id, p.name, p.slug, p.sale_price, p.promo_price,
+    `select v.id, p.id as product_id, p.name, p.slug, p.sale_price, p.promo_price,
             (select coalesce(im.url, '/loja/img/' || im.id) from draum.product_images im where im.product_id = p.id
               and (im.color is null or im.color = v.color) order by (im.color = v.color) desc nulls last, im.position, im.id limit 1) as image,
             p.image_url
@@ -146,12 +183,17 @@ export async function cartLines(items: { variantId: number; qty: number }[]) {
     const meta = info.find((r) => r.id === it.variantId);
     if (!v || !meta) return null;
     const mode = variantMode(v, s.availability_valid_days);
-    const unit = meta.promo_price != null ? Number(meta.promo_price) : Number(meta.sale_price);
     const maxQty = mode === "pronta" ? Number(v.available) : mode === "pre" ? Math.min(v.supplier_stock ?? 10, 10) : 0;
+    const qty = Math.min(it.qty, Math.max(maxQty, 0));
+    // Mesmo cálculo do CONTROL: com promoção, a base é o preço de venda e o desconto é por linha
+    const onPromo = promoApplies(promo, meta.product_id);
+    const base = Number(meta.sale_price);
+    const unit = onPromo ? discounted(base, promo!.pct) : meta.promo_price != null ? Number(meta.promo_price) : base;
+    const lineTotal = onPromo ? round2(qty * base - round2((qty * base * promo!.pct) / 100)) : round2(qty * unit);
     return { variantId: v.id as number, name: meta.name as string, slug: meta.slug as string, color: v.color as string, size: v.size as string,
-      image: (meta.image ?? meta.image_url) as string | null, mode, unitPrice: unit, qty: Math.min(it.qty, Math.max(maxQty, 0)), maxQty };
+      image: (meta.image ?? meta.image_url) as string | null, mode, unitPrice: unit, listPrice: base, onPromo, lineTotal, qty, maxQty };
   }).filter(Boolean) as any[];
-  return { lines, deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s), whatsappReady: !!s.store.whatsapp };
+  return { lines, deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s), whatsappReady: !!s.store.whatsapp, promo: promoInfo };
 }
 
 // ───────── Fechamento do pedido ─────────
@@ -159,6 +201,8 @@ export const checkoutSchema = z.object({
   items: z.array(z.object({ variantId: z.coerce.number().int().positive(), qty: z.coerce.number().int().min(1).max(10) })).min(1, "Sua sacola está vazia."),
   name: z.string().trim().min(3, "Informe seu nome completo."),
   whatsapp: z.string().trim().min(10, "Informe seu WhatsApp com DDD."),
+  email: z.string().trim().email("E-mail inválido.").optional().nullable().or(z.literal("")),
+  marketing: z.boolean().optional(),
   fulfillment: z.enum(["entrega_local", "retirada"]),
   neighborhood: z.string().trim().optional().nullable(),
   address: z.string().trim().optional().nullable(),
@@ -169,7 +213,7 @@ export const checkoutSchema = z.object({
 
 const SYSTEM_CTX: Ctx = { userId: null as unknown as number, role: "operador", name: "Loja online" };
 
-export async function placeStoreOrder(raw: unknown) {
+export async function placeStoreOrder(raw: unknown, isVip = false) {
   const input = checkoutSchema.parse(raw);
   const s = await getSettings();
   if (!s.store.whatsapp) throw new BusinessError("A loja ainda não está recebendo pedidos. Fale com a DRAUM pelo Instagram.");
@@ -177,7 +221,8 @@ export async function placeStoreOrder(raw: unknown) {
   if (input.fulfillment === "entrega_local" && (!input.address || !input.neighborhood))
     throw new BusinessError("Informe bairro e endereço para a entrega.");
 
-  const { lines, deliveryDate } = await cartLines(input.items);
+  const { lines, deliveryDate, promo } = await cartLines(input.items, isVip);
+  const usesPromo = !!promo && lines.some((l: any) => l.onPromo);
   if (lines.length !== input.items.length || lines.some((l: any) => !l.mode || l.qty < 1))
     throw new BusinessError("Alguma peça da sacola acabou de ficar indisponível. Atualize a sacola e tente de novo.");
   const hasPre = lines.some((l: any) => l.mode === "pre");
@@ -185,21 +230,9 @@ export async function placeStoreOrder(raw: unknown) {
   if (!deliveryDate) throw new BusinessError("Não foi possível calcular a data de entrega.");
 
   // Cliente: encontra pelo WhatsApp ou cria como lead do site
-  const customerId = await tx(async (c) => {
-    const found = await q1<{ id: number }>(`select id from draum.customers where whatsapp = $1`, [whatsapp], c);
-    if (found) {
-      await c.query(`update draum.customers set neighborhood = coalesce($2, neighborhood), address = coalesce($3, address),
-                       consent_whatsapp = true, consent_at = coalesce(consent_at, now()), consent_source = coalesce(consent_source, 'loja online')
-                     where id = $1`, [found.id, input.neighborhood || null, input.address || null]);
-      return found.id;
-    }
-    const r = await q1<{ id: number }>(
-      `insert into draum.customers(name, whatsapp, neighborhood, address, lead_source, consent_whatsapp, consent_at, consent_source)
-       values ($1,$2,$3,$4,'site',true,now(),'loja online') returning id`,
-      [input.name, whatsapp, input.neighborhood || null, input.address || null], c);
-    await c.query(`insert into draum.funnel_events(customer_id, stage) values ($1,'novo_lead')`, [r!.id]);
-    await audit(c, null, "customer", r!.id, "criar_loja");
-    return r!.id;
+  const customerId = await upsertStoreCustomer({
+    name: input.name, whatsapp: whatsapp!, email: input.email || null, neighborhood: input.neighborhood || null, address: input.address || null,
+    marketing: !!input.marketing, vip: usesPromo && !!promo && isVip, source: "pedido na loja online",
   });
 
   const preSupplier = new Map<number, number>();
@@ -221,16 +254,18 @@ export async function placeStoreOrder(raw: unknown) {
     notes: input.notes || null,
     idempotencyKey: input.idempotencyKey,
     channel: "loja",
+    promotionId: usesPromo ? promo!.id : null,
   });
 
-  const total = round2(lines.reduce((a: number, l: any) => a + l.unitPrice * l.qty, 0));
+  const total = round2(lines.reduce((a: number, l: any) => a + l.lineTotal, 0));
   const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const day = new Date(deliveryDate + "T12:00:00Z").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit", timeZone: "UTC" });
   const msg = [
     `Olá, DRAUM! Quero finalizar meu pedido *${order.number}*`,
     "",
-    ...lines.map((l: any) => `• ${l.qty}× ${l.name} — ${l.color} / ${l.size} — ${fmt(l.unitPrice * l.qty)}${l.mode === "pre" ? " (sob encomenda)" : ""}`),
+    ...lines.map((l: any) => `• ${l.qty}× ${l.name} — ${l.color} / ${l.size} — ${fmt(l.lineTotal)}${l.mode === "pre" ? " (sob encomenda)" : ""}`),
     "",
+    usesPromo ? `${promo!.name}: ${promo!.pct}% OFF aplicado` : null,
     `*Total: ${fmt(total)}*`,
     input.fulfillment === "entrega_local" ? `Entrega: ${day} · ${input.neighborhood}` : `Retirada combinada com a DRAUM (a partir de ${day})`,
     `Nome: ${input.name}`,
@@ -274,4 +309,54 @@ export async function repriceMft(c: any, st: StoreSettings) {
     await c.query(`update draum.products set sale_price = $2, updated_at = now() where id = $1`,
       [r.id, priceFromCost(Number(r.unit_cost) + Number(r.inbound_freight), st)]);
   return rows.length;
+}
+
+// ───────── Cadastro de clientes pela loja (WhatsApp, e-mail e consentimento) ─────────
+/** Cria ou atualiza a cliente pelo WhatsApp. Consentimento de WhatsApp/e-mail só com aceite explícito (LGPD). */
+export async function upsertStoreCustomer(d: {
+  name: string; whatsapp: string; email: string | null; neighborhood?: string | null; address?: string | null;
+  marketing: boolean; vip: boolean; source: string;
+}) {
+  return tx(async (c) => {
+    const found = await q1<{ id: number }>(`select id from draum.customers where whatsapp = $1`, [d.whatsapp], c);
+    let id: number;
+    if (found) {
+      id = found.id;
+      await c.query(
+        `update draum.customers set
+           email = coalesce($2::text, email), neighborhood = coalesce($3::text, neighborhood), address = coalesce($4::text, address),
+           consent_whatsapp = consent_whatsapp or $5::boolean, consent_email = consent_email or ($5::boolean and $2::text is not null),
+           consent_at = case when $5::boolean then coalesce(consent_at, now()) else consent_at end,
+           consent_source = case when $5::boolean then coalesce(consent_source, $7::text) else consent_source end,
+           vip_joined_at = case when $6::boolean then coalesce(vip_joined_at, current_date) else vip_joined_at end
+         where id = $1`, [id, d.email, d.neighborhood ?? null, d.address ?? null, d.marketing, d.vip, d.source]);
+    } else {
+      const r = await q1<{ id: number }>(
+        `insert into draum.customers(name, whatsapp, email, neighborhood, address, lead_source, vip_joined_at, funnel_stage,
+           consent_whatsapp, consent_email, consent_at, consent_source)
+         values ($1,$2,$3::text,$4,$5,'site', case when $6::boolean then current_date end, case when $6::boolean then 'entrou_vip' else 'novo_lead' end,
+           $7::boolean, $7::boolean and $3::text is not null, case when $7::boolean then now() end, case when $7::boolean then $8::text end) returning id`,
+        [d.name, d.whatsapp, d.email, d.neighborhood ?? null, d.address ?? null, d.vip, d.marketing, d.source], c);
+      id = r!.id;
+      await c.query(`insert into draum.funnel_events(customer_id, stage) values ($1,'novo_lead')`, [id]);
+      if (d.vip) await c.query(`insert into draum.funnel_events(customer_id, stage) values ($1,'entrou_vip')`, [id]);
+      await audit(c, null, "customer", id, "criar_loja", { source: d.source });
+    }
+    return id;
+  });
+}
+
+export const leadSchema = z.object({
+  name: z.string().trim().min(2, "Informe seu nome."),
+  whatsapp: z.string().trim().min(10, "Informe seu WhatsApp com DDD."),
+  email: z.string().trim().email("E-mail inválido.").optional().nullable().or(z.literal("")),
+  consent: z.literal(true, { message: "Marque a autorização para receber as novidades." }),
+});
+
+/** Cadastro na lista de novidades (home) ou no acesso antecipado (link VIP) */
+export async function registerLead(raw: unknown, opts: { vip: boolean }) {
+  const d = leadSchema.parse(raw);
+  const whatsapp = normalizeWhatsapp(d.whatsapp)!;
+  return upsertStoreCustomer({ name: d.name, whatsapp, email: d.email || null, marketing: true, vip: opts.vip,
+    source: opts.vip ? "acesso antecipado VIP (loja)" : "lista de novidades (loja)" });
 }

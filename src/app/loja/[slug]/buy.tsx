@@ -11,7 +11,7 @@ const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", curren
 const longDay = (iso: string | null) => iso ? new Date(iso + "T12:00:00Z").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", timeZone: "UTC" }) : "";
 
 export function Buy({ product, variants, images, deliveryDate, cutoff }: {
-  product: { name: string; price: number; promoPrice: number | null; description: string | null };
+  product: { name: string; price: number; promoPrice: number | null; description: string | null; promoLabel?: string | null };
   variants: V[]; images: Img[]; deliveryDate: string | null; cutoff: string;
 }) {
   const colors = useMemo(() => {
@@ -68,6 +68,7 @@ export function Buy({ product, variants, images, deliveryDate, cutoff }: {
             {product.promoPrice != null && <span className="text-muted line-through text-[14px]">{brl(product.price)}</span>}
             <span className="text-[20px]">{brl(price)}</span>
           </div>
+          {product.promoLabel && <div className="mt-2 inline-block bg-mineral text-offwhite font-mono text-[10px] tracking-[0.12em] uppercase px-2 py-1">{product.promoLabel}</div>}
         </div>
 
         <div className="space-y-3">

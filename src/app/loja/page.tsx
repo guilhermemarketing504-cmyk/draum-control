@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { listStoreProducts, type StoreCard } from "@/server/store";
+import { listStoreProducts, storePromotions, activePromo, type StoreCard, type StorePromo } from "@/server/store";
+import { vipFromCookie } from "./vip";
+import { LeadForm } from "./lead-form";
 import { getSettings } from "@/server/core";
 import { storeDeliveryDate } from "@/server/store";
 import { CATEGORIES } from "@/server/products";
@@ -12,8 +14,10 @@ const dayMonth = (iso: string | null) => iso ? new Date(iso + "T12:00:00Z").toLo
 export default async function Loja({ searchParams }: { searchParams: Promise<{ tipo?: string; cat?: string }> }) {
   const sp = await searchParams;
   const tipo = sp.tipo === "pronta" || sp.tipo === "encomenda" ? sp.tipo : "todos";
-  const [all, s] = await Promise.all([listStoreProducts(), getSettings()]);
+  const isVip = await vipFromCookie();
+  const [all, s, promos] = await Promise.all([listStoreProducts(isVip), getSettings(), storePromotions()]);
   const delivery = dayMonth(storeDeliveryDate(new Date(), s));
+  const hero = heroCopy(promos, isVip);
   const byType = all.filter((p) => tipo === "todos" || (tipo === "pronta" ? p.hasPronta : p.hasPre && !p.hasPronta));
   const cats = [...new Set(byType.map((p) => p.category))];
   const cat = sp.cat && cats.includes(sp.cat) ? sp.cat : null;
@@ -25,11 +29,11 @@ export default async function Loja({ searchParams }: { searchParams: Promise<{ t
   return (
     <div>
       <section className="max-w-[1240px] mx-auto px-5 sm:px-8 pt-12 sm:pt-16 pb-8">
-        <div className="label mb-4">Coleção · Belém</div>
-        <h1 className="font-display text-[34px] sm:text-[52px] leading-[1.02] max-w-[780px]">Movimento com presença, do treino ao fim de semana.</h1>
+        <div className="label mb-4">{hero.eyebrow}</div>
+        <h1 className="font-display text-[34px] sm:text-[52px] leading-[1.02] max-w-[820px]">{hero.title}</h1>
         <div className="vao max-w-[420px] mt-8" />
-        <p className="mt-6 text-[14px] text-espresso max-w-[560px]">
-          Peças a pronta-entrega e uma seleção sob encomenda. Pedidos confirmados até sexta, 12h, chegam na <strong className="font-medium text-mineral">terça {delivery}</strong>, com entrega gratuita em Belém.
+        <p className="mt-6 text-[14px] text-espresso max-w-[600px]">
+          {hero.text} Pedidos confirmados até sexta, 12h, chegam na <strong className="font-medium text-mineral">terça {delivery}</strong>, com entrega gratuita em Belém.
         </p>
       </section>
 
@@ -65,6 +69,19 @@ export default async function Loja({ searchParams }: { searchParams: Promise<{ t
           <Shelf title="Sob encomenda" note={`Peça agora e receba na terça ${delivery}. Encomendamos a sua peça logo após o pagamento.`} items={encomenda} delivery={delivery} />
         )}
       </div>
+
+      {!isVip && (
+        <section className="max-w-[1240px] mx-auto px-5 sm:px-8 mt-20">
+          <div className="border border-line bg-paper p-6 sm:p-10 grid lg:grid-cols-[1fr_1.4fr] gap-8 items-center">
+            <div>
+              <div className="label mb-3">Lista DRAUM</div>
+              <h2 className="font-display text-[24px] sm:text-[28px] leading-tight">Seja a primeira a saber.</h2>
+              <p className="text-[13px] text-espresso mt-2">Lançamentos, reposições e ofertas antes de todo mundo, no seu WhatsApp.</p>
+            </div>
+            <LeadForm mode="news" />
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -95,6 +112,7 @@ function Card({ p, delivery }: { p: StoreCard; delivery: string }) {
           ? <img src={p.image} alt={p.name} loading="lazy" className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
           : <div className="absolute inset-0 flex items-center justify-center label">DRAUM</div>}
         <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
+          {p.promoPct != null && <span className="bg-mineral text-offwhite font-mono text-[9.5px] tracking-[0.12em] uppercase px-2 py-1">{p.promoPct}% OFF</span>}
           {p.unique && <span className="bg-mineral text-offwhite font-mono text-[9.5px] tracking-[0.12em] uppercase px-2 py-1">Peça única</span>}
           {p.hasPronta && !p.unique && <span className="bg-offwhite/95 text-mineral font-mono text-[9.5px] tracking-[0.12em] uppercase px-2 py-1">Pronta-entrega</span>}
           {!p.hasPronta && <span className="bg-offwhite/95 text-espresso font-mono text-[9.5px] tracking-[0.12em] uppercase px-2 py-1">Encomenda · terça {delivery}</span>}
@@ -118,4 +136,25 @@ function Card({ p, delivery }: { p: StoreCard; delivery: string }) {
       </div>
     </Link>
   );
+}
+
+const fmtDay = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Belem" });
+const lastDay = (p: StorePromo) => fmtDay(new Date(p.endsAt.getTime() - 60_000));
+
+/** Texto de abertura: lançamento da loja + Black Friday, conforme a fase da campanha */
+function heroCopy(promos: StorePromo[], isVip: boolean, now = new Date()) {
+  const vip = promos.find((p) => p.requiresVip);
+  const pub = promos.find((p) => !p.requiresVip);
+  const active = activePromo(promos, isVip, now);
+  if (active && active.requiresVip)
+    return { eyebrow: "DRAUM Private Access · acesso antecipado", title: "Seu acesso antecipado está liberado.",
+      text: `${active.pct}% OFF em todas as peças até ${lastDay(active)}, antes de a Black Friday abrir para todo mundo.` };
+  if (active)
+    return { eyebrow: `Black Friday DRAUM · até ${lastDay(active)}`, title: `Nossa primeira Black Friday. ${active.pct}% OFF em tudo.`,
+      text: "Toda a loja com desconto, da pronta-entrega às peças sob encomenda." };
+  if (pub && now < pub.startsAt)
+    return { eyebrow: "Lançamento · Black Friday DRAUM", title: "A DRAUM chegou. E chega em movimento.",
+      text: `Nossa loja abre com a primeira Black Friday da marca: ${pub.pct}% OFF em todas as peças de ${fmtDay(pub.startsAt)} a ${lastDay(pub)}.`
+        + (vip && now < vip.endsAt ? ` Quem está no DRAUM Private Access compra antes, de ${fmtDay(vip.startsAt)} a ${lastDay(vip)}.` : "") };
+  return { eyebrow: "Coleção · Belém", title: "Movimento com presença, do treino ao fim de semana.", text: "Peças a pronta-entrega e uma seleção sob encomenda." };
 }

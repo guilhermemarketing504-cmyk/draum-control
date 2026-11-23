@@ -155,7 +155,11 @@ export async function createOrder(ctx: Ctx, raw: unknown) {
     const s = await getSettings(c);
     const prep = await prepareOrder(c, input, s);
     let overrideBy: number | null = null;
-    if (prep.marginBelow) {
+    let storeOverride: string | null = null;
+    if (prep.marginBelow && input.channel === "loja") {
+      // Promoção da loja online já aprovada pelo administrador ao cadastrá-la: não bloqueia a cliente
+      storeOverride = `Promoção da loja online (${prep.promotion?.name ?? "desconto"}): margem estimada ${prep.margin.marginPct}%`;
+    } else if (prep.marginBelow) {
       if (ctx.role !== "admin" || !input.marginOverrideReason)
         throw new BusinessError(`O desconto reduz a margem para ${prep.margin.marginPct}% (mínimo ${s.min_margin_pct}%). É necessária aprovação de um administrador com justificativa.`, "margem");
       overrideBy = ctx.userId;
@@ -183,7 +187,7 @@ export async function createOrder(ctx: Ctx, raw: unknown) {
          fulfillment, address, neighborhood, promised_date, notes, created_by, channel)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) returning id, number`,
       [input.customerId, input.idempotencyKey ?? null, subtotal, discountTotal, input.shippingCharged, total, input.paymentMethod ?? null,
-        input.promotionId ?? null, overrideBy, overrideBy ? input.marginOverrideReason : null, campaignId, ambassadorId, attribution,
+        input.promotionId ?? null, overrideBy, overrideBy ? input.marginOverrideReason : storeOverride, campaignId, ambassadorId, attribution,
         input.couponCode || null, input.fulfillment, input.address || prep.customer.address || null,
         input.neighborhood || prep.customer.neighborhood || null, promised, input.notes || null, ctx.userId, input.channel ?? "control"], c);
 
