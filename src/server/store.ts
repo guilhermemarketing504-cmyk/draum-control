@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BusinessError, Ctx, q, q1, round2, audit, requireAdmin, getSettings, Settings, StoreSettings, STORE_DEFAULTS } from "./core";
 import { tx } from "@/lib/db";
-import { firstEligibleTuesday } from "./delivery";
+import { firstEligibleTuesday, cutoffFor } from "./delivery";
 import { createOrder } from "./orders";
 import { normalizeWhatsapp } from "./crm";
 import { CATEGORIES } from "./products";
@@ -161,6 +161,7 @@ export async function getStoreProduct(slug: string, isVip = false) {
       promoPct: promoApplies(promo, p.id) ? promo!.pct : null, promoName: promoApplies(promo, p.id) ? promo!.name : null,
       promoEnds: promoApplies(promo, p.id) ? promo!.endsAt.toISOString() : null },
     variants, images, deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s),
+    cutoffAt: (() => { const d = storeDeliveryDate(new Date(), s); return d ? cutoffFor(d, s).toISOString() : null; })(),
   };
 }
 
@@ -193,7 +194,8 @@ export async function cartLines(items: { variantId: number; qty: number }[], isV
     return { variantId: v.id as number, name: meta.name as string, slug: meta.slug as string, color: v.color as string, size: v.size as string,
       image: (meta.image ?? meta.image_url) as string | null, mode, unitPrice: unit, listPrice: base, onPromo, lineTotal, qty, maxQty };
   }).filter(Boolean) as any[];
-  return { lines, deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s), whatsappReady: !!s.store.whatsapp, promo: promoInfo };
+  const dd = storeDeliveryDate(new Date(), s);
+  return { lines, deliveryDate: dd, cutoff: cutoffLabel(s), cutoffAt: dd ? cutoffFor(dd, s).toISOString() : null, whatsappReady: !!s.store.whatsapp, promo: promoInfo };
 }
 
 // ───────── Fechamento do pedido ─────────

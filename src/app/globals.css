@@ -76,3 +76,4 @@
 .bf-band { background: #111210; color: #F3F0E8; }
 .theme-vip .bf-band { background: #F3F0E8; color: #111210; }
 .bf-giant { font-family: "Archivo Variable", Archivo, system-ui, sans-serif; font-stretch: 125%; font-weight: 800; letter-spacing: -0.035em; line-height: 0.86; text-transform: uppercase; }
+.theme-vip :is(header, main) .text-ok { color: #A9C29A; }

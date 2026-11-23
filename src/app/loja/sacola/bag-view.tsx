@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Minus, Plus, X, MessageCircle } from "lucide-react";
 import { useBag, writeBag, type BagItem } from "../bag";
 import { cartAction, checkoutAction } from "../actions";
+import { DeliveryPromise } from "../delivery-promise";
 
 type Line = { variantId: number; name: string; slug: string; color: string; size: string; image: string | null; mode: "pronta" | "pre" | null; unitPrice: number; listPrice: number; onPromo: boolean; lineTotal: number; qty: number; maxQty: number };
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -15,7 +16,7 @@ function newKey() {
 
 export function Bag() {
   const bag = useBag();
-  const [data, setData] = useState<{ lines: Line[]; deliveryDate: string | null; cutoff: string; whatsappReady: boolean; promo: { name: string; pct: number } | null } | null>(null);
+  const [data, setData] = useState<{ lines: Line[]; deliveryDate: string | null; cutoff: string; cutoffAt: string | null; whatsappReady: boolean; promo: { name: string; pct: number } | null } | null>(null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ number: string; whatsappUrl: string; total: number; deliveryDate: string } | null>(null);
@@ -120,18 +121,16 @@ export function Bag() {
           ))}
         </ul>
         {data.promo && lines.some((l) => l.onPromo) && (
-          <div className="flex justify-between items-baseline pt-5 text-[13px] text-espresso">
-            <span>{data.promo.name} · {data.promo.pct}% OFF</span>
+          <div className="flex justify-between items-baseline pt-5 text-[13.5px] font-medium text-ok">
+            <span>{data.promo.pct}% OFF · {data.promo.name}</span>
             <span className="num">− {brl(fullTotal - total)}</span>
           </div>
         )}
         <div className="flex justify-between items-baseline pt-5">
           <span className="label">Total</span>
-          <span className="text-[20px] num">{brl(total)}</span>
+          <span className="text-[26px] font-semibold tracking-tight num">{brl(total)}</span>
         </div>
-        <p className="text-[12.5px] text-espresso mt-3">
-          Entrega gratuita em Belém na <strong className="font-medium text-mineral">{longDay(data.deliveryDate)}</strong>, para pedidos confirmados até {data.cutoff}.
-        </p>
+        <div className="mt-4"><DeliveryPromise date={data.deliveryDate} cutoffAt={data.cutoffAt} /></div>
       </div>
 
       <form action={submit} className="space-y-5 lg:sticky lg:top-24 self-start border border-line bg-paper p-6">

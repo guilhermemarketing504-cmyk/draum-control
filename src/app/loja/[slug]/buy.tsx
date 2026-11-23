@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
 import { addToBag } from "../bag";
+import { DeliveryPromise } from "../delivery-promise";
 
 interface V { id: number; color: string; hex: string | null; size: string; mode: "pronta" | "pre"; available: number }
 interface Img { src: string; color: string | null }
@@ -10,9 +11,9 @@ interface Img { src: string; color: string | null }
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const longDay = (iso: string | null) => iso ? new Date(iso + "T12:00:00Z").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", timeZone: "UTC" }) : "";
 
-export function Buy({ product, variants, images, deliveryDate, cutoff }: {
+export function Buy({ product, variants, images, deliveryDate, cutoff, cutoffAt }: {
   product: { name: string; price: number; promoPrice: number | null; description: string | null; promoLabel?: string | null };
-  variants: V[]; images: Img[]; deliveryDate: string | null; cutoff: string;
+  variants: V[]; images: Img[]; deliveryDate: string | null; cutoff: string; cutoffAt?: string | null;
 }) {
   const colors = useMemo(() => {
     const m = new Map<string, { name: string; hex: string | null; pronta: boolean }>();
@@ -64,11 +65,19 @@ export function Buy({ product, variants, images, deliveryDate, cutoff }: {
       <div className="lg:sticky lg:top-24 self-start space-y-7">
         <div>
           <h1 className="font-display text-[28px] sm:text-[34px] leading-[1.08]">{product.name}</h1>
-          <div className="mt-3 flex items-baseline gap-3 num">
-            {product.promoPrice != null && <span className="text-muted line-through text-[14px]">{brl(product.price)}</span>}
-            <span className="text-[20px]">{brl(price)}</span>
-          </div>
-          {product.promoLabel && <div className="mt-2 inline-block bg-mineral text-offwhite font-mono text-[10px] tracking-[0.12em] uppercase px-2 py-1">{product.promoLabel}</div>}
+          {product.promoPrice != null && product.promoPrice < product.price ? (
+            <div className="mt-4">
+              <div className="text-[14px] text-muted line-through num">{brl(product.price)}</div>
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-[32px] sm:text-[36px] font-semibold tracking-tight num leading-none">{brl(price)}</span>
+                <span className="bg-mineral text-offwhite bf-giant text-[18px] px-2.5 py-1.5">-{Math.round((1 - product.promoPrice / product.price) * 100)}%</span>
+              </div>
+              <div className="mt-1.5 text-[12.5px] text-ok font-medium">Você economiza {brl(product.price - product.promoPrice)}</div>
+              {product.promoLabel && <div className="mt-2 inline-block font-mono text-[10px] tracking-[0.12em] uppercase text-muted">{product.promoLabel}</div>}
+            </div>
+          ) : (
+            <div className="mt-3 text-[24px] num">{brl(price)}</div>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -93,14 +102,10 @@ export function Buy({ product, variants, images, deliveryDate, cutoff }: {
               </button>
             ))}
           </div>
-          {chosen && (
-            <p className="text-[12.5px] text-espresso">
-              {chosen.mode === "pronta"
-                ? chosen.available === 1 ? "Última unidade a pronta-entrega." : "Pronta-entrega: já está com a gente."
-                : "Sob encomenda: encomendamos a sua peça logo após o pagamento."}
-            </p>
-          )}
+          {chosen?.mode === "pronta" && chosen.available === 1 && <p className="text-[12.5px] font-medium text-crit">Última unidade.</p>}
         </div>
+
+        <DeliveryPromise date={deliveryDate} cutoffAt={cutoffAt ?? null} mode={chosen?.mode ?? null} />
 
         <div className="space-y-3">
           <button onClick={add} disabled={!chosen} className="w-full h-12 bg-mineral text-offwhite text-[13.5px] tracking-wide hover:bg-grafite disabled:opacity-40 disabled:cursor-not-allowed">
@@ -112,11 +117,6 @@ export function Buy({ product, variants, images, deliveryDate, cutoff }: {
               <Link href="/loja/sacola" className="link">Ver sacola</Link>
             </div>
           )}
-        </div>
-
-        <div className="border-t border-line pt-5 space-y-1.5 text-[12.5px] text-espresso">
-          <p><span className="text-mineral">Entrega gratuita em Belém</span> na {longDay(deliveryDate)}.</p>
-          <p className="text-muted">Pedidos confirmados até {cutoff}. Depois disso, a entrega passa para a terça seguinte.</p>
         </div>
 
         {product.description && (
