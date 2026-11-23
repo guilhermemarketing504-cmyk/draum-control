@@ -369,16 +369,16 @@ export async function registerLead(raw: unknown, opts: { vip: boolean }) {
     source: opts.vip ? "acesso antecipado VIP (loja)" : "lista de novidades (loja)" });
 }
 
-/** Vitrine "Os mais desejados": a lista escolhida na configuração; sem lista, as peças próprias e as de pronta-entrega primeiro */
+/** Vitrine "Os mais desejados": a lista escolhida na configuração; sem lista, as peças MFT de pronta-entrega e a seleção padrão */
 export const DEFAULT_FEATURED = ["conjunto-pulse", "conjunto-ryze", "conjunto-cold-2-0", "conjunto-club", "macaquito-street", "conjunto-glow", "conjunto-pilates", "conjunto-flare"];
 export function featuredCards(all: StoreCard[], slugs: string[] | undefined, max = 12) {
   const pick = new Map<string, StoreCard>();
   const bySlug = new Map(all.map((c) => [c.slug, c]));
   if (slugs?.length) for (const sl of slugs) { const c = bySlug.get(sl); if (c) pick.set(sl, c); }
   else {
-    for (const c of all) if (c.source === "proprio" && c.hasPronta) pick.set(c.slug, c);
-    for (const c of all) if (c.hasPronta && c.image) pick.set(c.slug, c);
-    for (const sl of DEFAULT_FEATURED) { const c = bySlug.get(sl); if (c) pick.set(sl, c); }
+    // Por enquanto a vitrine destaca só a MFT (fotos de estúdio): primeiro as de pronta-entrega, depois a seleção
+    for (const c of all) if (c.source === "mft" && c.hasPronta) pick.set(c.slug, c);
+    for (const sl of DEFAULT_FEATURED) { const c = bySlug.get(sl); if (c && c.source === "mft") pick.set(sl, c); }
   }
   return [...pick.values()].filter((c) => c.image).slice(0, max);
 }
