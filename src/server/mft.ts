@@ -296,6 +296,8 @@ async function upsertMftProduct(l: ListedProduct, p: ParsedProduct, supplierId: 
     existing.forEach((v) => codeByColor.set(v.color, v.color_code));
     const usedCodes = new Set(existing.map((v) => v.color_code));
     const seenSkus: string[] = [];
+    const upd: [number, string, string | null, string, number][] = [];
+    const ins: [string, string, string, string, string | null, string, number][] = [];
     for (const col of p.colors) {
       let cc = codeByColor.get(col.name);
       if (!cc) {
@@ -307,29 +309,39 @@ async function upsertMftProduct(l: ListedProduct, p: ParsedProduct, supplierId: 
       for (const sz of col.sizes) {
         seenSkus.push(sz.sku);
         const match = existing.find((v) => v.external_sku === sz.sku) ?? existing.find((v) => v.color === col.name && v.size === sz.size);
-        if (match) {
-          await c.query(`update draum.product_variants set color = $2, color_hex = $3, external_sku = $4, supplier_stock = $5, active = true where id = $1`,
-            [match.id, col.name, col.hex, sz.sku, sz.stock]);
-        } else {
-          const v = await q1<{ id: number }>(
-            `insert into draum.product_variants(product_id, sku, color, color_code, size, color_hex, external_sku, supplier_stock)
-             values ($1,$2,$3,$4,$5,$6,$7,$8) returning id`,
-            [prod.id, buildSku(prod.code, cc, sz.size), col.name, cc, sz.size, col.hex, sz.sku, sz.stock], c);
-          await c.query(`insert into draum.inventory(variant_id) values ($1) on conflict do nothing`, [v!.id]);
-        }
+        if (match) upd.push([match.id, col.name, col.hex, sz.sku, sz.stock]);
+        else ins.push([buildSku(prod.code, cc, sz.size), col.name, cc, sz.size, col.hex, sz.sku, sz.stock]);
       }
     }
+    // Gravação em lote (o banco fica longe do servidor: cada ida e volta custa caro)
+    if (upd.length) await c.query(
+      `update draum.product_variants v set color = u.color, color_hex = u.hex, external_sku = u.sku, supplier_stock = u.stock, active = true
+         from unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::int[]) as u(id, color, hex, sku, stock) where v.id = u.id`,
+      [upd.map((x) => x[0]), upd.map((x) => x[1]), upd.map((x) => x[2]), upd.map((x) => x[3]), upd.map((x) => x[4])]);
+    if (ins.length) await c.query(
+      `with novas as (
+         insert into draum.product_variants(product_id, sku, color, color_code, size, color_hex, external_sku, supplier_stock)
+         select $1, * from unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::int[]) returning id)
+       insert into draum.inventory(variant_id) select id from novas on conflict do nothing`,
+      [prod.id, ...[0, 1, 2, 3, 4, 5, 6].map((k) => ins.map((x) => x[k]))]);
     // Variante que sumiu da MFT: sem estoque na fábrica (não desativa, para não travar pedidos em aberto)
     await c.query(`update draum.product_variants set supplier_stock = 0 where product_id = $1 and external_sku is not null and not (external_sku = any($2))`,
       [prod.id, seenSkus]);
 
-    // Fotos da distribuidora (substitui as externas; mantém as enviadas pelo CONTROL)
-    await c.query(`delete from draum.product_images where product_id = $1 and url is not null`, [prod.id]);
-    let pos = 100;
-    for (const col of p.colors) for (const url of col.images)
-      await c.query(`insert into draum.product_images(product_id, color, url, position) values ($1,$2,$3,$4)`, [prod.id, col.name, url, pos++]);
-    const loose = p.images.filter((u) => !p.colors.some((col) => col.images.includes(u)));
-    for (const url of loose) await c.query(`insert into draum.product_images(product_id, url, position) values ($1,$2,$3)`, [prod.id, url, pos++]);
+    // Fotos da distribuidora (substitui as externas só se mudaram; mantém as enviadas pelo CONTROL)
+    const wanted: { color: string | null; url: string }[] = [];
+    for (const col of p.colors) for (const url of col.images) wanted.push({ color: col.name, url });
+    for (const url of p.images) if (!wanted.some((w) => w.url === url)) wanted.push({ color: null, url });
+    const current = await q<{ color: string | null; url: string }>(
+      `select color, url from draum.product_images where product_id = $1 and url is not null order by position, id`, [prod.id], c);
+    const same = current.length === wanted.length && current.every((x, i) => x.url === wanted[i].url && x.color === wanted[i].color);
+    if (!same) {
+      await c.query(`delete from draum.product_images where product_id = $1 and url is not null`, [prod.id]);
+      if (wanted.length) await c.query(
+        `insert into draum.product_images(product_id, color, url, position)
+         select $1, w.color, w.url, 99 + w.ord from unnest($2::text[], $3::text[]) with ordinality as w(color, url, ord)`,
+        [prod.id, wanted.map((w) => w.color), wanted.map((w) => w.url)]);
+    }
 
     return created ? "created" : "updated";
   });

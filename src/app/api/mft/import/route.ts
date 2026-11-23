@@ -1,4 +1,4 @@
-import { importMftFromBrowser, checkImportToken } from "@/server/mft";
+import { importMftFromBrowser, checkImportToken, isSyncRunning } from "@/server/mft";
 import { errorMessage } from "@/lib/action";
 
 export const dynamic = "force-dynamic";
@@ -21,10 +21,9 @@ export async function POST(req: Request) {
     return Response.json({ ok: false, error: "envio inválido" }, { status: 400, headers: CORS });
   }
   if (!(await checkImportToken(body?.token))) return Response.json({ ok: false, error: "favorito sem autorização: pegue o favorito de novo no CONTROL" }, { status: 401, headers: CORS });
-  try {
-    const r = await importMftFromBrowser(body);
-    return Response.json({ ok: true, seen: r.seen, created: r.created, paused: r.paused, costs: r.costs ?? 0, withoutCost: r.withoutCost, errors: r.errors.slice(0, 10) }, { headers: CORS });
-  } catch (e) {
-    return Response.json({ ok: false, error: errorMessage(e) }, { status: 500, headers: CORS });
-  }
+  if (isSyncRunning()) return Response.json({ ok: false, error: "já existe uma atualização em andamento; tente de novo em alguns minutos" }, { status: 409, headers: CORS });
+  // Processa em segundo plano: gravar 150+ peças leva alguns minutos e a aba da MFT não precisa ficar esperando
+  const total = Array.isArray(body?.items) ? body.items.length : 0;
+  void importMftFromBrowser(body).catch((e) => console.error("[mft] importação pelo navegador:", errorMessage(e)));
+  return Response.json({ ok: true, accepted: true, total }, { headers: CORS });
 }

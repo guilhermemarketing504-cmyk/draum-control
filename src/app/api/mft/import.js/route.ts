@@ -95,7 +95,7 @@ const SCRIPT = String.raw`(() => {
     const out = await r.json().catch(() => ({}));
     bar(1);
     if (!r.ok || !out.ok) { msg("Erro: " + (out.error || ("HTTP " + r.status))); box.style.background = "#8B3A2F"; }
-    else msg("Pronto! " + out.seen + " peças atualizadas (" + out.created + " novas, " + out.paused + " pausadas)" + (out.costs ? ", custos atualizados." : ".") + " Pode fechar esta aba.");
+    else msg("Pronto! " + out.total + " peças enviadas" + (logged ? " com custos" : "") + ". O CONTROL termina de atualizar em alguns minutos (veja em Loja online). Pode fechar esta aba.");
     window.__draumRunning = false;
   })().catch((e) => { msg("Erro: " + e.message); box.style.background = "#8B3A2F"; window.__draumRunning = false; });
 })();`;
