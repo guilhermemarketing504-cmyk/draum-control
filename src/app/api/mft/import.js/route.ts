@@ -19,7 +19,9 @@ const SCRIPT = String.raw`(() => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   async function getDoc(path) {
     for (let i = 1; ; i++) {
-      const r = await fetch(path, { credentials: "include", cache: "no-store" });
+      let r;
+      try { r = await fetch(path, { credentials: "include", cache: "no-store" }); }
+      catch (e) { if (i < 5) { await sleep(3000 * i); continue; } throw e; }
       if ((r.status === 429 || r.status >= 500) && i < 5) { await sleep(5000 * i); continue; }
       if (!r.ok) throw new Error("MFT respondeu " + r.status + " em " + path);
       const ct = r.headers.get("content-type") || "";
@@ -91,7 +93,7 @@ const SCRIPT = String.raw`(() => {
       await sleep(250);
     }
     msg("Enviando para o DRAUM CONTROL…"); bar(0.97);
-    const r = await fetch(cfg.endpoint, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ token: cfg.token, items, total: all.length, errors }) });
+    const r = await fetch(cfg.endpoint, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ token: cfg.token, items, total: all.length, errors, listed: all.map((l) => l.slug) }) });
     const out = await r.json().catch(() => ({}));
     bar(1);
     if (!r.ok || !out.ok) { msg("Erro: " + (out.error || ("HTTP " + r.status))); box.style.background = "#8B3A2F"; }

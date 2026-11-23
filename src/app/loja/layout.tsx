@@ -4,7 +4,7 @@ import { Wordmark, Tagline, Symbol } from "@/components/brand";
 import { BagButton } from "./bag";
 
 export const metadata: Metadata = {
-  title: { default: "DRAUM — The Art of Movement", template: "%s · DRAUM" },
+  title: { absolute: "DRAUM — The Art of Movement", template: "%s · DRAUM" },
   description: "Activewear premium de Belém. Pronta-entrega e peças sob encomenda com entrega gratuita às terças.",
   robots: { index: true, follow: true },
 };
