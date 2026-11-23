@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Wordmark, Tagline, Symbol } from "@/components/brand";
 import { BagButton } from "./bag";
-import { vipFromCookie } from "./vip";
+import { vipFromCookie, storeClock, PREVIEW } from "./vip";
+import { PreviewBar } from "./preview-bar";
 import { storePromotions, activePromo } from "@/server/store";
 
 export const metadata: Metadata = {
@@ -15,14 +16,15 @@ export const dynamic = "force-dynamic";
 
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
   const isVip = await vipFromCookie();
+  const now = await storeClock();
   const promos = await storePromotions().catch(() => []);
-  const active = activePromo(promos, isVip);
+  const active = activePromo(promos, isVip, now);
   const pub = promos.find((p) => !p.requiresVip);
   const dm = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Belem" });
   const bar = isVip
     ? active ? `DRAUM Private Access · ${active.pct}% OFF em tudo liberado` : "DRAUM Private Access · seu acesso está garantido"
     : active ? `Black Friday DRAUM · ${active.pct}% OFF em tudo até ${dm(new Date(active.endsAt.getTime() - 60_000))}`
-    : pub && new Date() < pub.startsAt ? `Black Friday DRAUM · ${dm(pub.startsAt)} a ${dm(new Date(pub.endsAt.getTime() - 60_000))}`
+    : pub && now < pub.startsAt ? `Black Friday DRAUM · ${dm(pub.startsAt)} a ${dm(new Date(pub.endsAt.getTime() - 60_000))}`
     : "Entrega gratuita em Belém toda terça-feira";
   return (
     <div className={`min-h-screen bg-offwhite text-mineral flex flex-col ${isVip ? "theme-vip" : ""}`}>
@@ -65,6 +67,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         </div>
         <div className="border-t border-grafite py-5 text-center label !text-stone/70">DRAUM · The Art of Movement</div>
       </footer>
+      {PREVIEW && <PreviewBar now={now.toISOString()} vip={isVip} />}
     </div>
   );
 }
