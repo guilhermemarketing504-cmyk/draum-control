@@ -49,6 +49,7 @@ export const orderSchema = z.object({
   ambassadorId: z.coerce.number().int().positive().optional().nullable(),
   attribution: z.enum(["cupom", "link", "registro_explicito"]).optional().nullable(),
   marginOverrideReason: z.string().trim().optional().nullable(),
+  channel: z.enum(["control", "loja"]).optional().nullable(),
 });
 export type OrderInput = z.infer<typeof orderSchema>;
 
@@ -179,12 +180,12 @@ export async function createOrder(ctx: Ctx, raw: unknown) {
     const order = await q1<{ id: number; number: string }>(
       `insert into draum.orders(customer_id, idempotency_key, subtotal, discount_total, shipping_charged, total, payment_method,
          promotion_id, margin_override_by, margin_override_reason, campaign_id, ambassador_id, attribution, coupon_code,
-         fulfillment, address, neighborhood, promised_date, notes, created_by)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) returning id, number`,
+         fulfillment, address, neighborhood, promised_date, notes, created_by, channel)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21) returning id, number`,
       [input.customerId, input.idempotencyKey ?? null, subtotal, discountTotal, input.shippingCharged, total, input.paymentMethod ?? null,
         input.promotionId ?? null, overrideBy, overrideBy ? input.marginOverrideReason : null, campaignId, ambassadorId, attribution,
         input.couponCode || null, input.fulfillment, input.address || prep.customer.address || null,
-        input.neighborhood || prep.customer.neighborhood || null, promised, input.notes || null, ctx.userId], c);
+        input.neighborhood || prep.customer.neighborhood || null, promised, input.notes || null, ctx.userId, input.channel ?? "control"], c);
 
     for (const l of prep.lines) {
       const item = await q1<{ id: number }>(

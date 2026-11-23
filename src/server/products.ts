@@ -209,7 +209,7 @@ export async function sellableVariants() {
                from draum.product_suppliers ps join draum.suppliers s on s.id = ps.supplier_id where ps.product_id = p.id and s.active), '[]') as suppliers
        from draum.product_variants v join draum.products p on p.id = v.product_id
        left join draum.inventory i on i.variant_id = v.id
-      where v.active and p.status = 'ativo' order by p.name, v.color, v.size`);
+      where v.active and p.status = 'ativo' and p.sale_price > 0 order by p.name, v.color, v.size`);
 }
 
 // ───────── Importação CSV ─────────
