@@ -75,7 +75,7 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
               <p>O robô lê o site da MFT e atualiza peças, fotos, cores, tamanhos e o estoque da fábrica. Peças que saem do site da MFT são pausadas aqui e somem da loja.</p>
               <p>Ele roda sozinho a cada 3 horas. O preço de custo não é lido automaticamente porque o login da MFT tem verificação anti-robô; mantenha-o na aba <b>Custos MFT</b>.</p>
               <ActionForm action={syncMftAction} submitLabel="Sincronizar agora" submitClass="btn-primary" />
-              <p className="text-[11.5px] text-muted">Leva de 1 a 3 minutos.</p>
+              <p className="text-[11.5px] text-muted">Leva de 4 a 6 minutos: o site da MFT limita o ritmo de acessos, então o robô lê uma página por vez.</p>
             </div>
           </Section>
         </div>

@@ -25,14 +25,40 @@ const HEADERS = {
   "Accept-Language": "pt-BR,pt;q=0.9",
 };
 
+// A MFT limita o ritmo de acessos (HTTP 429): no máximo 1 requisição por vez, com intervalo mínimo entre elas.
+const MIN_INTERVAL_MS = Number(process.env.MFT_REQUEST_INTERVAL_MS ?? 1500);
+let lastRequest = 0;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+let queue: Promise<unknown> = Promise.resolve();
+
+async function throttledFetch(url: URL): Promise<Response> {
+  const run = async () => {
+    const wait = lastRequest + MIN_INTERVAL_MS + Math.random() * 400 - Date.now();
+    if (wait > 0) await sleep(wait);
+    lastRequest = Date.now();
+    return fetch(url, { headers: HEADERS, redirect: "follow", cache: "no-store" });
+  };
+  const p = queue.then(run, run);
+  queue = p.catch(() => {});
+  return p;
+}
+
 export async function fetchHtml(path: string): Promise<string> {
-  const res = await fetch(new URL(path, MFT_BASE), { headers: HEADERS, redirect: "follow", cache: "no-store" });
-  if (!res.ok) throw new Error(`MFT respondeu ${res.status} em ${path}`);
-  const buf = await res.arrayBuffer();
-  const ct = res.headers.get("content-type") ?? "";
-  // o site da MFT é servido em ISO-8859-1
-  const charset = /utf-?8/i.test(ct) ? "utf-8" : "windows-1252";
-  return new TextDecoder(charset).decode(buf);
+  const url = new URL(path, MFT_BASE);
+  for (let attempt = 1; ; attempt++) {
+    const res = await throttledFetch(url);
+    if ((res.status === 429 || res.status >= 500) && attempt < 5) {
+      const ra = Number(res.headers.get("retry-after"));
+      await sleep((Number.isFinite(ra) && ra > 0 ? ra * 1000 : 15_000 * attempt));
+      continue;
+    }
+    if (!res.ok) throw new Error(`MFT respondeu ${res.status} em ${path}`);
+    const buf = await res.arrayBuffer();
+    const ct = res.headers.get("content-type") ?? "";
+    // o site da MFT é servido em ISO-8859-1
+    const charset = /utf-?8/i.test(ct) ? "utf-8" : "windows-1252";
+    return new TextDecoder(charset).decode(buf);
+  }
 }
 
 export interface ListedProduct { slug: string; name: string; category: string }
@@ -134,6 +160,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
 export interface SyncReport { runId: number; seen: number; created: number; updated: number; paused: number; withoutCost: number; errors: string[] }
 
 let running = false;
+export const isSyncRunning = () => running;
 
 /** Sincroniza o catálogo da MFT com o CONTROL. ctx = null quando disparado pelo agendador. */
 export async function syncMft(ctx: Ctx | null): Promise<SyncReport> {
@@ -149,7 +176,7 @@ export async function syncMft(ctx: Ctx | null): Promise<SyncReport> {
   try {
     const listed = await listCatalog();
     if (listed.length < 10) throw new Error(`Catálogo veio com apenas ${listed.length} peças — a MFT pode ter mudado o site. Nada foi alterado.`);
-    const pages = await pool(listed, 4, async (l) => ({ listed: l, parsed: parseProduct(await fetchHtml(`${l.slug}/`)) }));
+    const pages = await pool(listed, 1, async (l) => ({ listed: l, parsed: parseProduct(await fetchHtml(`${l.slug}/`)) }));
     const seenIds: string[] = [];
     for (const r of pages) {
       if (r instanceof Error) { report.errors.push(r.message); continue; }
