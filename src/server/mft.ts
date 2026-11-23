@@ -129,7 +129,7 @@ export function parseProduct(html: string): ParsedProduct {
     const sizes = block.querySelectorAll(".vars .it").map((it) => {
       const input = it.querySelector("input");
       return {
-        size: normalizeSize(it.getAttribute("title") ?? it.querySelector(".t")?.text ?? "U"),
+        size: normalizeSize((it.querySelector(".t")?.text || it.getAttribute("title") || "U").split(" - ")[0]),
         stock: Math.max(0, parseInt(input?.getAttribute("max") ?? "0", 10) || 0),
         sku: input?.getAttribute("data-sku") ?? "",
       };
@@ -157,40 +157,88 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
   return out;
 }
 
-export interface SyncReport { runId: number; seen: number; created: number; updated: number; paused: number; withoutCost: number; errors: string[] }
+export interface SyncReport { runId: number; seen: number; created: number; updated: number; paused: number; withoutCost: number; costs?: number; errors: string[] }
 
 let running = false;
 export const isSyncRunning = () => running;
 
 /** Sincroniza o catálogo da MFT com o CONTROL. ctx = null quando disparado pelo agendador. */
+export interface CatalogItem { listed: ListedProduct; parsed: ParsedProduct; cost?: number | null }
+
+/** Leitura pelo servidor (pode ser bloqueada pela MFT fora do Brasil) */
 export async function syncMft(ctx: Ctx | null): Promise<SyncReport> {
   if (ctx) requireAdmin(ctx);
+  return runSync(ctx, "servidor", async () => {
+    const listed = await listCatalog();
+    if (listed.length < 10) {
+      const sample = await fetchHtml("todos-os-produtos/").catch((e) => String(e));
+      const title = sample.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? sample.slice(0, 120).replace(/\s+/g, " ");
+      throw new Error(`Catálogo veio com apenas ${listed.length} peças (a MFT entregou: "${title}"). Use a leitura pelo navegador. Nada foi alterado.`);
+    }
+    const pages = await pool(listed, 1, async (l) => ({ listed: l, parsed: parseProduct(await fetchHtml(`${l.slug}/`)) }));
+    const errors: string[] = [];
+    const items: CatalogItem[] = [];
+    for (const r of pages) if (r instanceof Error) errors.push(r.message); else items.push(r);
+    return { items, errors, total: listed.length };
+  });
+}
+
+/** Leitura feita no navegador do revendedor (logado na MFT): traz também o custo */
+export async function importMftFromBrowser(raw: unknown): Promise<SyncReport> {
+  const body = raw as { items?: any[]; total?: number; errors?: string[] };
+  if (!Array.isArray(body?.items)) throw new BusinessError("Envio inválido.");
+  const items: CatalogItem[] = body.items.slice(0, 2000).map((it) => ({
+    listed: { slug: String(it.slug), name: String(it.name ?? ""), category: MFT_CATEGORIES[it.category] ?? (Object.values(MFT_CATEGORIES).includes(it.category) ? it.category : "outras") },
+    parsed: {
+      externalId: String(it.externalId), name: String(it.name ?? ""), description: it.description ? String(it.description).slice(0, 5000) : null,
+      images: (Array.isArray(it.images) ? it.images : []).filter((u: any) => typeof u === "string" && /^https:\/\//.test(u)).slice(0, 60),
+      colors: (Array.isArray(it.colors) ? it.colors : []).map((c: any) => ({
+        id: String(c.id), name: String(c.name ?? "Única").slice(0, 60), hex: typeof c.hex === "string" && /^#[0-9a-f]{3,8}$/i.test(c.hex) ? c.hex : null,
+        images: (Array.isArray(c.images) ? c.images : []).filter((u: any) => typeof u === "string" && /^https:\/\//.test(u)).slice(0, 30),
+        sizes: (Array.isArray(c.sizes) ? c.sizes : []).map((z: any) => ({ size: normalizeSize(String(z.size ?? "U").split(" - ")[0]), stock: Math.max(0, Math.trunc(Number(z.stock)) || 0), sku: String(z.sku ?? "") }))
+          .filter((z: any) => z.size && z.sku),
+      })).filter((c: any) => c.id && c.sizes.length),
+    },
+    cost: Number.isFinite(Number(it.cost)) && Number(it.cost) > 0 ? Math.round(Number(it.cost) * 100) / 100 : null,
+  })).filter((i) => /^\d+$/.test(i.parsed.externalId) && i.listed.slug && i.parsed.colors.length);
+  return runSync(null, "navegador", async () => ({ items, errors: (body.errors ?? []).map(String).slice(0, 50), total: Number(body.total) || items.length }));
+}
+
+async function runSync(ctx: Ctx | null, origin: "servidor" | "navegador",
+  gather: () => Promise<{ items: CatalogItem[]; errors: string[]; total: number }>): Promise<SyncReport> {
   if (running) throw new BusinessError("Já existe uma sincronização em andamento. Aguarde alguns minutos.");
   running = true;
   const s = await getSettings();
   const supplierId = s.store.mft_supplier_id
     ?? (await q1<{ id: number }>(`select id from draum.suppliers where name = 'MFT (revenda)'`))?.id;
   if (!supplierId) { running = false; throw new BusinessError("Fornecedor MFT não encontrado. Rode as migrações."); }
-  const run = await q1<{ id: number }>(`insert into draum.supplier_sync_runs(supplier_id) values ($1) returning id`, [supplierId]);
+  const run = await q1<{ id: number }>(`insert into draum.supplier_sync_runs(supplier_id, logged_in) values ($1,$2) returning id`, [supplierId, origin === "navegador"]);
   const report: SyncReport = { runId: run!.id, seen: 0, created: 0, updated: 0, paused: 0, withoutCost: 0, errors: [] };
   try {
-    const listed = await listCatalog();
-    if (listed.length < 10) throw new Error(`Catálogo veio com apenas ${listed.length} peças — a MFT pode ter mudado o site. Nada foi alterado.`);
-    const pages = await pool(listed, 1, async (l) => ({ listed: l, parsed: parseProduct(await fetchHtml(`${l.slug}/`)) }));
+    const { items, errors, total } = await gather();
+    report.errors.push(...errors);
+    if (items.length < 10) throw new Error(`Leitura com apenas ${items.length} peças. Nada foi alterado.`);
     const seenIds: string[] = [];
-    for (const r of pages) {
-      if (r instanceof Error) { report.errors.push(r.message); continue; }
+    let costs = 0;
+    for (const it of items) {
       try {
-        const res = await upsertMftProduct(r.listed, r.parsed, supplierId, s.store);
-        seenIds.push(r.parsed.externalId);
+        const res = await upsertMftProduct(it.listed, it.parsed, supplierId, s.store);
+        seenIds.push(it.parsed.externalId);
         report.seen++;
         if (res === "created") report.created++; else report.updated++;
+        if (it.cost) {
+          await q(`update draum.product_suppliers ps set unit_cost = $2 from draum.products p
+                    where ps.product_id = p.id and p.source = 'mft' and p.external_id = $1 and ps.is_primary`, [it.parsed.externalId, it.cost]);
+          costs++;
+        }
       } catch (e) {
-        report.errors.push(`${r.listed.slug}: ${(e as Error).message}`);
+        report.errors.push(`${it.listed.slug}: ${(e as Error).message}`);
       }
     }
+    report.costs = costs;
+    if (costs) await tx((c) => repriceMft(c, s.store).then(() => undefined));
     // Peças que saíram do catálogo da MFT: pausa (só quando a leitura foi completa)
-    if (report.errors.length <= Math.max(5, listed.length * 0.1)) {
+    if (report.errors.length <= Math.max(5, total * 0.1) && report.seen >= total * 0.9) {
       const paused = await q<{ id: number }>(
         `update draum.products set status = 'pausado', updated_at = now()
           where source = 'mft' and status = 'ativo' and not (external_id = any($1)) returning id`, [seenIds]);
@@ -199,10 +247,10 @@ export async function syncMft(ctx: Ctx | null): Promise<SyncReport> {
     report.withoutCost = (await q1<{ n: number }>(
       `select count(*) n from draum.products p join draum.product_suppliers ps on ps.product_id = p.id and ps.is_primary
         where p.source = 'mft' and ps.unit_cost = 0 and p.status <> 'pausado'`))!.n;
+    const note = [origin === "navegador" ? `Leitura pelo navegador${costs ? `, ${costs} custos atualizados` : ""}.` : null, ...report.errors.slice(0, 20)].filter(Boolean).join("\n");
     await q(`update draum.supplier_sync_runs set finished_at = now(), status = 'ok', products_seen = $2, products_created = $3,
                products_updated = $4, products_paused = $5, without_cost = $6, message = $7 where id = $1`,
-      [run!.id, report.seen, report.created, report.updated, report.paused, report.withoutCost,
-        report.errors.length ? report.errors.slice(0, 20).join("\n") : null]);
+      [run!.id, report.seen, report.created, report.updated, report.paused, report.withoutCost, note || null]);
     if (ctx) await audit(getPool(), ctx, "supplier", supplierId, "sincronizar_mft", report);
     return report;
   } catch (e) {
@@ -318,4 +366,26 @@ export async function saveMftCosts(ctx: Ctx, costs: { productId: number; cost: n
 
 export async function lastSyncRuns(limit = 5) {
   return q<any>(`select * from draum.supplier_sync_runs order by started_at desc limit $1`, [limit]);
+}
+
+// ───────── Favorito de leitura pelo navegador ─────────
+import { randomBytes, timingSafeEqual } from "crypto";
+
+/** Chave do favorito (gerada uma vez e guardada nas configurações da loja) */
+export async function getImportToken(): Promise<string> {
+  const s = await getSettings();
+  const cur = (s.store as any).import_token as string | undefined;
+  if (cur && cur.length >= 32) return cur;
+  const token = randomBytes(24).toString("base64url");
+  await q(`update draum.settings set value = value || jsonb_build_object('import_token', $1::text) where key = 'store'`, [token]);
+  return token;
+}
+
+export async function checkImportToken(token: unknown): Promise<boolean> {
+  if (typeof token !== "string" || token.length < 32) return false;
+  const s = await getSettings();
+  const cur = (s.store as any).import_token as string | undefined;
+  if (!cur) return false;
+  const a = Buffer.from(token), b = Buffer.from(cur);
+  return a.length === b.length && timingSafeEqual(a, b);
 }

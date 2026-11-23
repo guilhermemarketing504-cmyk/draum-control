@@ -1,6 +1,7 @@
 // Agendador interno do robô da MFT (somente no runtime Node.js). Ver src/instrumentation.ts.
 export function startMftScheduler() {
-  if (process.env.NODE_ENV !== "production" || process.env.MFT_AUTO_SYNC === "false") return;
+  // Desligado por padrão: a MFT não entrega o catálogo para servidores fora do Brasil. Ligue com MFT_AUTO_SYNC=true.
+  if (process.env.NODE_ENV !== "production" || process.env.MFT_AUTO_SYNC !== "true") return;
   const g = globalThis as unknown as { __mftTimer?: boolean };
   if (g.__mftTimer) return;
   g.__mftTimer = true;
