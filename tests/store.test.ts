@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { q, q1, closePool } from "@/lib/db";
 import { users, fixture, setSetting } from "./helpers";
-import { priceFromCost, listStoreProducts, getStoreProduct, placeStoreOrder, cartLines, storeDeliveryDate } from "@/server/store";
+import { priceFromCost, listStoreProducts, getStoreProduct, placeStoreOrder, cartLines, storeDeliveryDate, registerLead } from "@/server/store";
 import { parseProduct, parseListing, saveMftCosts, importMftFromBrowser, getImportToken, checkImportToken } from "@/server/mft";
 import { getSettings, Ctx, BusinessError } from "@/server/core";
 import { createProduct } from "@/server/products";
@@ -113,7 +113,7 @@ describe("Loja online", () => {
     const r = await placeStoreOrder({
       items: [{ variantId: f.variantM, qty: 1 }, { variantId: m.variants[0].id, qty: 2 }],
       name: "Cliente da Loja", whatsapp: "(91) 98111-2233", fulfillment: "entrega_local", neighborhood: "Umarizal", address: "Rua A, 10",
-      acceptPre: true, idempotencyKey: `loja-${Date.now()}`,
+      acceptPre: true, email: "cliente@exemplo.com", marketing: true, idempotencyKey: `loja-${Date.now()}`,
     });
     expect(r.whatsappUrl).toMatch(/^https:\/\/wa\.me\/5591985295411\?text=/);
     expect(decodeURIComponent(r.whatsappUrl)).toContain(r.number);
@@ -128,7 +128,7 @@ describe("Loja online", () => {
     const inv = await q1<any>(`select qty_reserved from draum.inventory where variant_id=$1`, [f.variantM]);
     expect(inv.qty_reserved).toBe(1);
     const cust = await q1<any>(`select * from draum.customers where id=$1`, [order.customer_id]);
-    expect(cust).toMatchObject({ whatsapp: "5591981112233", lead_source: "site", consent_whatsapp: true });
+    expect(cust).toMatchObject({ whatsapp: "5591981112233", lead_source: "site", consent_whatsapp: true, consent_email: true, email: "cliente@exemplo.com" });
 
     // A peça única acabou: some da loja e um segundo pedido é recusado
     const again = await cartLines([{ variantId: f.variantM, qty: 1 }]);
@@ -197,6 +197,38 @@ describe("Leitura da MFT pelo navegador", () => {
     expect(await checkImportToken(t)).toBe(true);
     expect(await checkImportToken("x".repeat(40))).toBe(false);
     expect(await getImportToken()).toBe(t);
+  });
+});
+
+describe("Black Friday e cadastro de contatos", () => {
+  it("VIP vê 20% de 24 a 26/11; público a partir de 27; o pedido entra com a promoção", async () => {
+    await q(`update draum.promotions set name='Black Friday — acesso antecipado VIP', all_products=true, starts_at=now() - interval '1 hour', ends_at=now() + interval '1 day' where name like 'Black Friday — acesso%'`);
+    await q(`update draum.promotions set all_products=true, starts_at=now() + interval '2 days', ends_at=now() + interval '5 days' where name like 'Black Friday — produtos%'`);
+    const m = await mftProduct(85); // R$ 169,90
+    const pub = (await listStoreProducts(false)).find((p) => p.id === m.id)!;
+    expect(pub.promoPct).toBeNull();
+    const vip = (await listStoreProducts(true)).find((p) => p.id === m.id)!;
+    expect(vip).toMatchObject({ promoPct: 20, promoPrice: 135.92 });
+    const cart = await cartLines([{ variantId: m.variants[0].id, qty: 2 }], true);
+    expect(cart.lines[0]).toMatchObject({ onPromo: true, lineTotal: 271.84 });
+    const r = await placeStoreOrder({ items: [{ variantId: m.variants[0].id, qty: 2 }], name: "Cliente VIP", whatsapp: "91981117777", fulfillment: "retirada",
+      acceptPre: true, idempotencyKey: `loja-vip-${Date.now()}` }, true);
+    expect(r.total).toBe(271.84);
+    const order = await q1<any>(`select o.*, c.vip_joined_at from draum.orders o join draum.customers c on c.id=o.customer_id where o.number=$1`, [r.number]);
+    expect(Number(order.total)).toBe(271.84);
+    expect(order.promotion_id).not.toBeNull();
+    expect(order.vip_joined_at).not.toBeNull();
+    // sem o link VIP, o mesmo carrinho não tem desconto
+    expect((await cartLines([{ variantId: m.variants[0].id, qty: 2 }], false)).lines[0].lineTotal).toBe(339.8);
+  });
+  it("cadastro de novidades exige autorização e não duplica o WhatsApp", async () => {
+    await expect(registerLead({ name: "Ana", whatsapp: "91981110099", consent: false }, { vip: false })).rejects.toThrow();
+    const a = await registerLead({ name: "Ana", whatsapp: "(91) 98111-0099", email: "ana@x.com", consent: true }, { vip: false });
+    const b = await registerLead({ name: "Ana Paula", whatsapp: "91981110099", consent: true }, { vip: true });
+    expect(b).toBe(a);
+    const c = await q1<any>(`select * from draum.customers where id=$1`, [a]);
+    expect(c).toMatchObject({ email: "ana@x.com", consent_whatsapp: true, consent_email: true, lead_source: "site" });
+    expect(c.vip_joined_at).not.toBeNull();
   });
 });
 

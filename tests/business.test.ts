@@ -260,7 +260,7 @@ describe("10. Desconto sem margem suficiente", () => {
     await q(`update draum.customers set vip_joined_at = null where id=$1`, [f.customerId]);
     const vip = await q1<any>(`select id from draum.promotions where kind='vip'`);
     await expect(createOrder(op, { customerId: f.customerId, fulfillment: "retirada", promotionId: vip.id, items: [pronta(f.variantM)] })).rejects.toThrow(/exclusiva/);
-    const bf = await q1<any>(`select id from draum.promotions where name='Black Friday — produtos selecionados'`);
+    const bf = await q1<any>(`select id from draum.promotions where name='Black Friday DRAUM'`);
     await expect(createOrder(op, { customerId: f.customerId, fulfillment: "retirada", promotionId: bf.id, items: [pronta(f.variantM)] })).rejects.toThrow(/vigente/);
   });
 

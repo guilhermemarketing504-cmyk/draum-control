@@ -25,6 +25,9 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
     q1<any>(`select
         (select count(*) from draum.orders where channel = 'loja') as orders,
         (select count(*) from draum.orders where channel = 'loja' and status = 'aguardando_pagamento') as waiting,
+        (select count(*) from draum.customers where lead_source = 'site') as leads,
+        (select count(*) from draum.customers where lead_source = 'site' and consent_whatsapp) as leads_ok,
+        (select count(*) from draum.customers where consent_source = 'acesso antecipado VIP (loja)') as vip_leads,
         (select count(*) from draum.products where source = 'proprio' and status = 'ativo' and store_visible) as own,
         (select count(*) from draum.products p where source = 'proprio' and status = 'ativo' and store_visible
            and not exists (select 1 from draum.product_images i where i.product_id = p.id) and p.image_url is null) as own_no_photo`),
@@ -116,6 +119,27 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
             <p className="card-pad text-[12px] text-muted border-t border-line">Use o preço cheio de revenda (sem promoções temporárias da MFT). Exemplo com a margem atual: custo R$ 100,00 → {brl(priceFromCost(100, st))}.</p>
           </ActionForm>
         </Section>
+      )}
+
+      {tab === "visao" && (
+        <div className="mt-6">
+          <Section title="Black Friday e contatos para remarketing">
+            <div className="card-pad grid lg:grid-cols-2 gap-6 text-[12.5px] text-espresso">
+              <div className="space-y-2">
+                <div className="label">Link do acesso antecipado (grupo VIP)</div>
+                {st.vip_code ? <>
+                  <div className="font-mono text-[12px] bg-offwhite border border-line px-3 py-2 break-all select-all">{base}/loja/vip/{st.vip_code}</div>
+                  <p>Envie no grupo DRAUM PRIVATE ACCESS. Quem abre o link confirma nome, WhatsApp e e-mail e vê os preços VIP no celular. Os descontos e as datas ficam em Marketing → Promoções.</p>
+                </> : <p className="text-muted">Código VIP ainda não gerado.</p>}
+              </div>
+              <div className="space-y-2">
+                <div className="label">Contatos captados pela loja</div>
+                <p><b className="num">{int(counts.leads)}</b> pessoas cadastradas pelo site, <b className="num">{int(counts.leads_ok)}</b> com autorização para receber ofertas, <b className="num">{int(counts.vip_leads)}</b> pelo link VIP.</p>
+                <p>Ficam em <Link href="/clientes?origem=site" className="link">Clientes</Link>, com WhatsApp, e-mail e a data do consentimento. Para campanhas, use só quem autorizou.</p>
+              </div>
+            </div>
+          </Section>
+        </div>
       )}
 
       {tab === "config" && (
