@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listStoreProducts, storePromotions, featuredCards, type StoreCard, type StorePromo } from "@/server/store";
 import { vipFromCookie, storeClock } from "./vip";
 import { Carousel } from "./carousel";
+import { Countdown } from "./countdown";
 import { LeadForm } from "./lead-form";
 import { getSettings } from "@/server/core";
 import { storeDeliveryDate } from "@/server/store";
@@ -32,7 +33,7 @@ export default async function Loja({ searchParams }: { searchParams: Promise<{ t
 
   return (
     <div>
-      <Hero hero={hero} delivery={delivery} whatsapp={s.store.whatsapp} />
+      <Hero hero={hero} delivery={delivery} whatsapp={s.store.whatsapp} now={now.toISOString()} />
 
       {featured.length >= 3 && (
         <section className="pt-10 sm:pt-14">
@@ -169,8 +170,10 @@ function Card({ p, delivery, big = false }: { p: StoreCard; delivery: string; bi
 
 const fmtDay = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Belem" });
 const lastDay = (p: StorePromo) => fmtDay(new Date(p.endsAt.getTime() - 60_000));
+const fmtHour = (d: Date) => { const h = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Belem" }); return h.endsWith(":00") ? `${Number(h.slice(0, 2))}h` : h; };
+const fmtWhen = (d: Date) => `${fmtDay(d)} às ${fmtHour(d)}`;
 
-interface HeroCopy { kind: "bf" | "vip" | "normal"; eyebrow: string; giant?: [string, string]; title?: string; text: string; pitch?: string }
+interface HeroCopy { kind: "bf" | "vip" | "normal"; eyebrow: string; giant?: [string, string]; title?: string; text: string; pitch?: string; countdown?: { to: string; label: string } }
 
 /** Abertura da loja: lançamento + Black Friday, conforme a fase da campanha e quem está vendo (grupo VIP ou público) */
 function heroCopy(promos: StorePromo[], isVip: boolean, now: Date): HeroCopy {
@@ -179,22 +182,25 @@ function heroCopy(promos: StorePromo[], isVip: boolean, now: Date): HeroCopy {
   if (isVip && vip && now <= vip.endsAt) {
     if (now < vip.startsAt)
       return { kind: "vip", eyebrow: "DRAUM Private Access", giant: ["Acesso", "garantido"],
-        text: `Os seus ${vip.pct}% OFF liberam em ${fmtDay(vip.startsAt)}, antes de todo mundo. Volte por este mesmo celular.` };
+        text: `Os seus ${vip.pct}% OFF liberam em ${fmtWhen(vip.startsAt)}, antes de todo mundo. Volte por este mesmo celular.`,
+        countdown: { to: vip.startsAt.toISOString(), label: `Seus ${vip.pct}% OFF liberam em` } };
     return { kind: "vip", eyebrow: `DRAUM Private Access · até ${lastDay(vip)}`, giant: ["Acesso", "antecipado"],
       text: `${vip.pct}% OFF em tudo até ${lastDay(vip)}. ${pub ? "O dobro de quem está fora do grupo." : "Exclusivo do grupo."}` };
   }
   if (pub && now <= pub.endsAt) {
     const live = now >= pub.startsAt;
-    const pitch = vip && now <= vip.endsAt ? `No DRAUM Private Access é ${vip.pct}% OFF${now < vip.startsAt ? `, a partir de ${fmtDay(vip.startsAt)}` : ""}.` : undefined;
+    const pitch = vip && now <= vip.endsAt ? `No DRAUM Private Access é ${vip.pct}% OFF${now < vip.startsAt ? `, a partir de ${fmtWhen(vip.startsAt)}` : ""}.` : undefined;
+    const countdown = vip && now < vip.startsAt ? { to: vip.startsAt.toISOString(), label: "Ofertas do grupo começam em" }
+      : !live ? { to: pub.startsAt.toISOString(), label: "Black Friday para todos começa em" } : undefined;
     return { kind: "bf", eyebrow: live ? `Black Friday DRAUM · até ${lastDay(pub)}` : "Lançamento · Black Friday DRAUM", giant: ["Black", "Friday"],
       text: live ? `${pub.pct}% OFF em todas as peças até ${lastDay(pub)}.`
         : `A DRAUM chegou. ${pub.pct}% OFF em tudo, de ${fmtDay(pub.startsAt)} a ${lastDay(pub)}.`,
-      pitch };
+      pitch, countdown };
   }
   return { kind: "normal", eyebrow: "Coleção · Belém", title: "Movimento com presença, do treino ao fim de semana.", text: "Peças a pronta-entrega e uma seleção sob encomenda." };
 }
 
-function Hero({ hero, delivery, whatsapp }: { hero: HeroCopy; delivery: string; whatsapp: string }) {
+function Hero({ hero, delivery, whatsapp, now }: { hero: HeroCopy; delivery: string; whatsapp: string; now: string }) {
   const deliveryLine = <>Entrega grátis em Belém toda terça.</>;
   if (hero.kind === "normal") {
     return (
@@ -215,6 +221,9 @@ function Hero({ hero, delivery, whatsapp }: { hero: HeroCopy; delivery: string; 
           <span className="block">{hero.giant![0]}</span>
           <span className="block">{hero.giant![1]}</span>
         </h1>
+        {hero.countdown && (
+          <div className="mt-8"><Countdown to={hero.countdown.to} label={hero.countdown.label} serverNow={now} /></div>
+        )}
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_1fr] items-end">
           <div className="space-y-3">
             <p className="text-[17px] sm:text-[19px] leading-snug max-w-[560px]">{hero.text}</p>
