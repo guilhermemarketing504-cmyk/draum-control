@@ -44,6 +44,6 @@ export async function removeProductImageAction(_: ActionResult | null, fd: FormD
 /** Registra que a mensagem de WhatsApp foi aberta para envio (botão com texto pronto) */
 export async function recordNoticeAction(kind: string, refId: number) {
   const { recordNotice } = await import("@/server/notices");
-  if (!["pedido_confirmado", "pedido_pendente", "boas_vindas_vip"].includes(kind) || !(refId > 0)) return { ok: false as const };
+  if (!["pedido_confirmado", "pedido_pendente", "boas_vindas_vip", "convite_grupo"].includes(kind) || !(refId > 0)) return { ok: false as const };
   return act((ctx) => recordNotice(ctx, kind as any, refId), { revalidate: ["/loja-online", "/pedidos"], message: "Marcado como enviado." });
 }

@@ -2,7 +2,7 @@ import { q, q1, Ctx, getSettings } from "./core";
 import { storePromotions } from "./store";
 
 /** Mensagens de WhatsApp com texto pronto: o CONTROL abre a conversa e a pessoa da equipe só aperta enviar. */
-export type NoticeKind = "pedido_confirmado" | "pedido_pendente" | "boas_vindas_vip";
+export type NoticeKind = "pedido_confirmado" | "pedido_pendente" | "boas_vindas_vip" | "convite_grupo";
 
 const first = (name: string) => (name ?? "").trim().split(/\s+/)[0] || "tudo bem";
 const brl = (v: number) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -39,6 +39,15 @@ export async function vipWelcomeMessage(name: string, baseUrl: string) {
   return `Oi, ${first(name)}! Seja bem-vinda ao DRAUM Private Access.\n\n${oferta}\n\nO seu link de acesso é este: ${link}\nAbra sempre por ele, neste mesmo celular.\n\nEntrega gratuita em Belém toda terça. Qualquer dúvida, é só me chamar aqui.`;
 }
 
+export async function groupInviteMessage(name: string) {
+  const vip = (await storePromotions()).find((p) => p.requiresVip);
+  const now = new Date();
+  const oferta = vip && now <= vip.endsAt
+    ? `Lá dentro a Black Friday é ${vip.pct}% OFF em tudo${now < vip.startsAt ? `, a partir de ${when(vip.startsAt)}` : ""}, antes de todo mundo.`
+    : "Lá dentro você vê as novidades e as ofertas antes de todo mundo.";
+  return `Oi, ${first(name)}! Aqui é da DRAUM. Obrigado por se cadastrar na nossa loja.\n\nQuer entrar no DRAUM Private Access, o nosso grupo exclusivo? ${oferta}\n\nMe responde "QUERO" que eu te mando o convite.`;
+}
+
 export async function recordNotice(ctx: Ctx, kind: NoticeKind, refId: number) {
   await q(`insert into draum.whatsapp_notices(kind, ref_id, user_id) values ($1, $2, $3)
            on conflict (kind, ref_id) do update set sent_at = now(), user_id = excluded.user_id`, [kind, refId, ctx.userId]);
@@ -63,7 +72,13 @@ export async function noticeQueue() {
       where c.whatsapp is not null and c.consent_whatsapp
         and (c.consent_source = 'acesso antecipado VIP (loja)' or c.vip_joined_at is not null)
       order by (n.sent_at is null) desc, coalesce(c.vip_joined_at::timestamptz, c.created_at) desc limit 200`);
-  return { orders: orders.map((o) => ({ ...o, items: items.filter((i) => i.order_id === o.id) })), vips };
+  const leads = await q<any>(
+    `select c.id, c.name, c.whatsapp, c.created_at, n.sent_at
+       from draum.customers c left join draum.whatsapp_notices n on n.kind = 'convite_grupo' and n.ref_id = c.id
+      where c.whatsapp is not null and c.consent_whatsapp and c.vip_joined_at is null
+        and c.consent_source = 'lista de novidades (loja)'
+      order by (n.sent_at is null) desc, c.created_at desc limit 200`);
+  return { orders: orders.map((o) => ({ ...o, items: items.filter((i) => i.order_id === o.id) })), vips, leads };
 }
 
 export async function orderNotice(orderId: number) {

@@ -10,7 +10,7 @@ import { ActionForm, Field } from "@/components/forms";
 import { saveStoreSettingsAction, saveMftCostsAction } from "@/app/actions/store";
 import { CATEGORIES } from "@/server/products";
 import { brl, dateTimeBR, dateBR, int } from "@/lib/format";
-import { noticeQueue, orderMessage, vipWelcomeMessage } from "@/server/notices";
+import { noticeQueue, orderMessage, vipWelcomeMessage, groupInviteMessage } from "@/server/notices";
 import { WhatsappButton } from "@/components/WhatsappButton";
 import { ORDER_STATUS } from "@/server/orders";
 
@@ -168,9 +168,10 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
 }
 
 async function Mensagens({ base }: { base: string }) {
-  const { orders, vips } = await noticeQueue();
-  const pendOrders = orders.filter((o) => !o.sent_at).length, pendVips = vips.filter((v) => !v.sent_at).length;
+  const { orders, vips, leads } = await noticeQueue();
+  const pendOrders = orders.filter((o) => !o.sent_at).length, pendVips = vips.filter((v) => !v.sent_at).length, pendLeads = leads.filter((l) => !l.sent_at).length;
   const welcome = await Promise.all(vips.map((v) => vipWelcomeMessage(v.name, base)));
+  const invites = await Promise.all(leads.map((l) => groupInviteMessage(l.name)));
   return (
     <div className="mt-6 space-y-6">
       <Alert>Cada botão abre o WhatsApp da cliente com a mensagem já escrita. Confira e aperte enviar. O CONTROL marca quem já recebeu.</Alert>
@@ -205,6 +206,22 @@ async function Mensagens({ base }: { base: string }) {
                 <td className="text-[12px]">{dateBR(v.vip_joined_at ?? v.created_at)}</td>
                 <td><WhatsappButton small phone={v.whatsapp} refId={v.id} kind="boas_vindas_vip" label="Dar boas-vindas"
                   sentAt={v.sent_at ? new Date(v.sent_at).toISOString() : null} text={welcome[i]} /></td>
+              </tr>))}
+            </tbody>
+          </table></div>
+        )}
+      </Section>
+      <Section title={`Cadastros pelo site, fora do grupo${pendLeads ? ` · ${pendLeads} sem convite` : ""}`}>
+        {leads.length === 0 ? <div className="card-pad text-muted text-[13px]">Ninguém se cadastrou em "Seja a primeira a saber" ainda.</div> : (
+          <div className="overflow-x-auto"><table className="table">
+            <thead><tr><th>Nome</th><th>WhatsApp</th><th>Cadastro</th><th>Mensagem</th></tr></thead>
+            <tbody>{leads.map((l, i) => (
+              <tr key={l.id}>
+                <td><Link className="link" href={`/clientes/${l.id}`}>{l.name}</Link></td>
+                <td className="num text-[12px]">{l.whatsapp}</td>
+                <td className="text-[12px]">{dateBR(l.created_at)}</td>
+                <td><WhatsappButton small phone={l.whatsapp} refId={l.id} kind="convite_grupo" label="Convidar pro grupo"
+                  sentAt={l.sent_at ? new Date(l.sent_at).toISOString() : null} text={invites[i]} /></td>
               </tr>))}
             </tbody>
           </table></div>
