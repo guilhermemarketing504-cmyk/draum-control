@@ -208,14 +208,14 @@ describe("Black Friday e cadastro de contatos", () => {
     const pub = (await listStoreProducts(false)).find((p) => p.id === m.id)!;
     expect(pub.promoPct).toBeNull();
     const vip = (await listStoreProducts(true)).find((p) => p.id === m.id)!;
-    expect(vip).toMatchObject({ promoPct: 20, promoPrice: 135.92 });
+    expect(vip).toMatchObject({ promoPct: 20, promoPrice: 135.9 });
     const cart = await cartLines([{ variantId: m.variants[0].id, qty: 2 }], true);
-    expect(cart.lines[0]).toMatchObject({ onPromo: true, lineTotal: 271.84 });
+    expect(cart.lines[0]).toMatchObject({ onPromo: true, lineTotal: 271.8 });
     const r = await placeStoreOrder({ items: [{ variantId: m.variants[0].id, qty: 2 }], name: "Cliente VIP", whatsapp: "91981117777", fulfillment: "retirada",
       acceptPre: true, idempotencyKey: `loja-vip-${Date.now()}` }, true);
-    expect(r.total).toBe(271.84);
+    expect(r.total).toBe(271.8);
     const order = await q1<any>(`select o.*, c.vip_joined_at from draum.orders o join draum.customers c on c.id=o.customer_id where o.number=$1`, [r.number]);
-    expect(Number(order.total)).toBe(271.84);
+    expect(Number(order.total)).toBe(271.8);
     expect(order.promotion_id).not.toBeNull();
     expect(order.vip_joined_at).not.toBeNull();
     // sem o link VIP, o mesmo carrinho não tem desconto

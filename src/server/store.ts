@@ -1,3 +1,4 @@
+import { promoUnitPrice } from "./pricing";
 import { z } from "zod";
 import { BusinessError, Ctx, q, q1, round2, audit, requireAdmin, getSettings, Settings, StoreSettings, STORE_DEFAULTS } from "./core";
 import { tx } from "@/lib/db";
@@ -35,7 +36,7 @@ export function activePromo(promos: StorePromo[], isVip: boolean, now = new Date
   return promos.filter((p) => now >= p.startsAt && now <= p.endsAt && (!p.requiresVip || isVip)).sort((a, b) => b.pct - a.pct)[0] ?? null;
 }
 const promoApplies = (p: StorePromo | null, productId: number) => !!p && (p.productIds == null || p.productIds.includes(productId));
-const discounted = (price: number, pct: number) => round2(price - round2((price * pct) / 100));
+const discounted = (price: number, pct: number) => promoUnitPrice(price, pct);
 
 /** Link do acesso antecipado: o cookie guarda o código do grupo VIP */
 export async function isVipCode(code: string | undefined | null) {
@@ -190,11 +191,11 @@ export async function cartLines(items: { variantId: number; qty: number }[], isV
     const mode = variantMode(v, s.availability_valid_days, now);
     const maxQty = mode === "pronta" ? Number(v.available) : mode === "pre" ? Math.min(v.supplier_stock ?? 10, 10) : 0;
     const qty = Math.min(it.qty, Math.max(maxQty, 0));
-    // Mesmo cálculo do CONTROL: com promoção, a base é o preço de venda e o desconto é por linha
+    // Mesmo cálculo do CONTROL: com a Black Friday, o preço unitário termina em ,90
     const onPromo = promoApplies(promo, meta.product_id);
     const base = Number(meta.sale_price);
     const unit = onPromo ? discounted(base, promo!.pct) : meta.promo_price != null ? Number(meta.promo_price) : base;
-    const lineTotal = onPromo ? round2(qty * base - round2((qty * base * promo!.pct) / 100)) : round2(qty * unit);
+    const lineTotal = round2(qty * unit);
     return { variantId: v.id as number, name: meta.name as string, slug: meta.slug as string, color: v.color as string, size: v.size as string,
       image: (meta.image ?? meta.image_url) as string | null, mode, unitPrice: unit, listPrice: base, onPromo, lineTotal, qty, maxQty };
   }).filter(Boolean) as any[];
