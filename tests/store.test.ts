@@ -202,6 +202,7 @@ describe("Leitura da MFT pelo navegador", () => {
 
 describe("Black Friday e cadastro de contatos", () => {
   it("VIP vê 20% de 24 a 26/11; público a partir de 27; o pedido entra com a promoção", async () => {
+    await q(`update draum.promotions set active=false where kind='black_friday' and name not like 'Black Friday%'`); // promoções de outros testes
     await q(`update draum.promotions set name='Black Friday — acesso antecipado VIP', all_products=true, starts_at=now() - interval '1 hour', ends_at=now() + interval '1 day' where name like 'Black Friday — acesso%'`);
     await q(`update draum.promotions set all_products=true, starts_at=now() + interval '2 days', ends_at=now() + interval '5 days' where name like 'Black Friday — produtos%'`);
     const m = await mftProduct(85); // R$ 169,90

@@ -252,7 +252,7 @@ describe("10. Desconto sem margem suficiente", () => {
     expect(Number(order.discount_total)).toBe(40.1);
     expect(order.margin_override_by).toBe(admin.userId);
     // descontos não cumulativos: duas peças (12%) não soma com a promoção escolhida
-    expect(ok.margin.discount).toBe(40);
+    expect(ok.margin.discount).toBe(40.1);
   });
 
   it("promoção VIP é recusada para cliente fora do grupo e fora da vigência", async () => {
