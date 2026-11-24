@@ -10,6 +10,8 @@ import {
   finalizeOrderAction, cancelOrderAction, payRefundAction, returnAction,
 } from "@/app/actions/orders";
 import { brl, dateBR, dateTimeBR, waLink } from "@/lib/format";
+import { orderNotice } from "@/server/notices";
+import { WhatsappButton } from "@/components/WhatsappButton";
 
 const FULFILL: Record<string, string> = { entrega_local: "DRAUM Delivery Day", retirada: "Retirada", envio: "Envio por transportadora" };
 
@@ -28,6 +30,7 @@ export default async function Pedido({ params }: { params: Promise<{ id: string 
   const delivered = items.filter((i) => i.status === "entregue");
   const cancellable = o.status !== "cancelado" && !items.some((i) => ["em_rota", "entregue", "devolvido", "trocado"].includes(i.status));
   const variants = delivered.length ? await sellableVariants() : [];
+  const notice = o.status !== "cancelado" ? await orderNotice(id) : null;
 
   return (
     <>
@@ -158,6 +161,14 @@ export default async function Pedido({ params }: { params: Promise<{ id: string 
 
         <div className="space-y-6">
           <Section title="Resumo">
+            {notice && (
+              <div className="card-pad border-b border-line space-y-2">
+                <div className="label">Avisar a cliente</div>
+                <WhatsappButton phone={notice.whatsapp} text={notice.text} kind={notice.kind} refId={id}
+                  sentAt={notice.sentAt ? new Date(notice.sentAt).toISOString() : null}
+                  label={notice.kind === "pedido_pendente" ? "Lembrar pagamento no WhatsApp" : "Confirmar pedido no WhatsApp"} />
+              </div>
+            )}
             <div className="card-pad">
               <KV items={[
                 ["Cliente", <Link key="c" className="link" href={`/clientes/${o.customer_id}`}>{o.customer_name}</Link>],
