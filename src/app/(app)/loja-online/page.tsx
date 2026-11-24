@@ -10,6 +10,9 @@ import { ActionForm, Field } from "@/components/forms";
 import { saveStoreSettingsAction, saveMftCostsAction } from "@/app/actions/store";
 import { CATEGORIES } from "@/server/products";
 import { brl, dateTimeBR, dateBR, int } from "@/lib/format";
+import { noticeQueue, orderMessage, vipWelcomeMessage } from "@/server/notices";
+import { WhatsappButton } from "@/components/WhatsappButton";
+import { ORDER_STATUS } from "@/server/orders";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Loja online" };
@@ -56,8 +59,11 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
       <Tabs current={tab} tabs={[
         { key: "visao", label: "Atualizar MFT", href: "/loja-online" },
         { key: "custos", label: `Custos MFT${missing.length ? ` (${missing.length} pendentes)` : ""}`, href: "/loja-online?aba=custos" },
+        { key: "mensagens", label: "Mensagens WhatsApp", href: "/loja-online?aba=mensagens" },
         { key: "config", label: "Configuração", href: "/loja-online?aba=config" },
       ]} />
+
+      {tab === "mensagens" && <Mensagens base={base} />}
 
       {tab === "visao" && (
         <div className="grid xl:grid-cols-[1fr_380px] gap-6 items-start">
@@ -158,5 +164,52 @@ export default async function LojaOnline({ searchParams }: { searchParams: Promi
         </Section>
       )}
     </>
+  );
+}
+
+async function Mensagens({ base }: { base: string }) {
+  const { orders, vips } = await noticeQueue();
+  const pendOrders = orders.filter((o) => !o.sent_at).length, pendVips = vips.filter((v) => !v.sent_at).length;
+  const welcome = await Promise.all(vips.map((v) => vipWelcomeMessage(v.name, base)));
+  return (
+    <div className="mt-6 space-y-6">
+      <Alert>Cada botão abre o WhatsApp da cliente com a mensagem já escrita. Confira e aperte enviar. O CONTROL marca quem já recebeu.</Alert>
+      <Section title={`Pedidos da loja${pendOrders ? ` · ${pendOrders} sem aviso` : ""}`}>
+        {orders.length === 0 ? <div className="card-pad text-muted text-[13px]">Nenhum pedido pela loja nos últimos 21 dias.</div> : (
+          <div className="overflow-x-auto"><table className="table">
+            <thead><tr><th>Pedido</th><th>Cliente</th><th>Peças</th><th className="text-right">Total</th><th>Status</th><th>Mensagem</th></tr></thead>
+            <tbody>{orders.map((o) => (
+              <tr key={o.id}>
+                <td><Link className="link font-mono text-[12px]" href={`/pedidos/${o.id}`}>{o.number}</Link><div className="text-[11.5px] text-muted">{dateTimeBR(o.created_at)}</div></td>
+                <td>{o.customer_name}</td>
+                <td className="text-[12px]">{o.items.map((i: any) => `${i.qty > 1 ? `${i.qty}x ` : ""}${i.product_name} ${i.size}`).join(", ")}</td>
+                <td className="text-right num">{brl(o.total)}</td>
+                <td className="text-[12px]">{ORDER_STATUS[o.status] ?? o.status}</td>
+                <td><WhatsappButton small phone={o.whatsapp} refId={o.id} sentAt={o.sent_at ? new Date(o.sent_at).toISOString() : null}
+                  kind={o.status === "aguardando_pagamento" ? "pedido_pendente" : "pedido_confirmado"}
+                  label={o.status === "aguardando_pagamento" ? "Lembrar pagamento" : "Confirmar pedido"}
+                  text={orderMessage(o, o.items)} /></td>
+              </tr>))}
+            </tbody>
+          </table></div>
+        )}
+      </Section>
+      <Section title={`Novos no DRAUM Private Access${pendVips ? ` · ${pendVips} sem boas-vindas` : ""}`}>
+        {vips.length === 0 ? <div className="card-pad text-muted text-[13px]">Ninguém entrou pelo link do grupo ainda.</div> : (
+          <div className="overflow-x-auto"><table className="table">
+            <thead><tr><th>Nome</th><th>WhatsApp</th><th>Entrou em</th><th>Mensagem</th></tr></thead>
+            <tbody>{vips.map((v, i) => (
+              <tr key={v.id}>
+                <td><Link className="link" href={`/clientes/${v.id}`}>{v.name}</Link></td>
+                <td className="num text-[12px]">{v.whatsapp}</td>
+                <td className="text-[12px]">{dateBR(v.vip_joined_at ?? v.created_at)}</td>
+                <td><WhatsappButton small phone={v.whatsapp} refId={v.id} kind="boas_vindas_vip" label="Dar boas-vindas"
+                  sentAt={v.sent_at ? new Date(v.sent_at).toISOString() : null} text={welcome[i]} /></td>
+              </tr>))}
+            </tbody>
+          </table></div>
+        )}
+      </Section>
+    </div>
   );
 }

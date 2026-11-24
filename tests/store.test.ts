@@ -235,3 +235,20 @@ describe("Black Friday e cadastro de contatos", () => {
 
 const round = (n: number) => Math.round(n * 100) / 100;
 void adjustStock;
+
+describe("Mensagens de WhatsApp com texto pronto", () => {
+  it("monta confirmação, lembrete de pagamento e registra o envio", async () => {
+    const { orderMessage, recordNotice, noticeQueue } = await import("@/server/notices");
+    const items = [{ product_name: "Conjunto Vibe", color: "Choc", size: "G", qty: 1 }];
+    const pago = orderMessage({ customer_name: "Ana Souza", number: "DR-1", total: 143.9, promised_date: "2026-12-01", status: "pago", fulfillment: "entrega_local" }, items);
+    expect(pago).toMatch(/Oi, Ana!/); expect(pago).toMatch(/DR-1 está confirmado/); expect(pago).toMatch(/Conjunto Vibe \(Choc, G\)/); expect(pago).toMatch(/01\/12/);
+    const pend = orderMessage({ customer_name: "Ana", number: "DR-2", total: 50, promised_date: null, status: "aguardando_pagamento", fulfillment: "entrega_local" }, items);
+    expect(pend).toMatch(/aguardando o pagamento/);
+    const c = await q1<any>(`insert into draum.customers(name, whatsapp, consent_whatsapp, consent_source, vip_joined_at) values ('Bia', '5591999990001', true, 'acesso antecipado VIP (loja)', current_date) returning id`);
+    let qd = await noticeQueue();
+    expect(qd.vips.find((v: any) => v.id === c.id)?.sent_at).toBeNull();
+    await recordNotice(admin, "boas_vindas_vip", c.id);
+    qd = await noticeQueue();
+    expect(qd.vips.find((v: any) => v.id === c.id)?.sent_at).toBeTruthy();
+  });
+});
