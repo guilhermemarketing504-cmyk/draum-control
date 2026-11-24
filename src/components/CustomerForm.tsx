@@ -18,7 +18,7 @@ export function CustomerForm({ c, campaigns, ambassadors }: { c?: any; campaigns
       <Field label="Preferência de produtos"><input className="input" name="product_prefs" defaultValue={c?.product_prefs ?? ""} placeholder="macaquinhos, tons escuros" /></Field>
       <Field label="Tamanhos de interesse"><input className="input" name="sizes" defaultValue={c?.sizes ?? ""} placeholder="M, G" /></Field>
       <Field label="Origem do lead"><select className="input" name="lead_source" defaultValue={c?.lead_source ?? ""}><option value="">—</option>{SOURCES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-      <Field label="Entrada no grupo VIP" hint="Preencha quando a pessoa entrar no DRAUM PRIVATE ACCESS."><input className="input" name="vip_joined_at" type="date" defaultValue={c?.vip_joined_at ?? ""} /></Field>
+      <Field label="Está no grupo VIP? Data de entrada" hint="Preencha se a pessoa está no DRAUM PRIVATE ACCESS. Sem essa data ela não aparece na lista de boas-vindas."><input className="input" name="vip_joined_at" type="date" defaultValue={c?.vip_joined_at ?? ""} /></Field>
       <Field label="Campanha de origem"><select className="input" name="campaign_id" defaultValue={c?.campaign_id ?? ""}><option value="">—</option>{campaigns.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
       <Field label="Indicada por embaixadora"><select className="input" name="ambassador_id" defaultValue={c?.ambassador_id ?? ""}><option value="">—</option>{ambassadors.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></Field>
       <fieldset className="sm:col-span-2 border border-line rounded p-3 space-y-2">

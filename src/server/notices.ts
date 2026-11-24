@@ -36,7 +36,7 @@ export async function vipWelcomeMessage(name: string, baseUrl: string) {
     : now < vip.startsAt ? `O seu acesso antecipado está garantido: ${vip.pct}% OFF em tudo a partir de ${when(vip.startsAt)}, antes de todo mundo.`
     : now <= vip.endsAt ? `Os seus ${vip.pct}% OFF em tudo já estão liberados, até ${when(new Date(vip.endsAt.getTime() - 60_000))}.`
     : "Você recebe as novidades e as ofertas antes de todo mundo.";
-  return `Oi, ${first(name)}! Seja bem-vinda ao DRAUM Private Access.\n\n${oferta}\n\nO seu link de acesso é este: ${link}\nAbra sempre por ele, neste mesmo celular.\n\nEntrega gratuita em Belém toda terça. Qualquer dúvida, é só me chamar aqui.`;
+  return `Oi, ${first(name)}! Boas-vindas ao DRAUM Private Access!\n\n${oferta}\n\nO seu link de acesso é este: ${link}\nAbra sempre por ele, neste mesmo celular.\n\nEntrega gratuita em Belém toda terça. Qualquer dúvida, é só me chamar aqui.`;
 }
 
 export async function groupInviteMessage(name: string) {
