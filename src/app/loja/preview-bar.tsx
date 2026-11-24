@@ -1,6 +1,6 @@
 /** Barra da prévia de aprovação (só aparece com STORE_PREVIEW=1): troca a data simulada e a visão VIP/pública */
 const MOMENTS: [string, string][] = [
-  ["2026-11-24T00:00:00-03:00", "24/11 00h"],
+  ["2026-11-24T10:00:00-03:00", "24/11 10h"],
   ["2026-11-27T00:00:00-03:00", "27/11 00h"],
   ["", "Hoje"],
 ];
