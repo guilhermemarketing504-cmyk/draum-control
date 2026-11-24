@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getStoreProduct } from "@/server/store";
 import { Buy } from "./buy";
-import { vipFromCookie } from "../vip";
+import { vipFromCookie, storeClock } from "../vip";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
-  const r = await getStoreProduct((await params).slug, await vipFromCookie());
+  const r = await getStoreProduct((await params).slug, await vipFromCookie(), await storeClock());
   if (!r) notFound();
   const { product, variants, images, deliveryDate, cutoff, cutoffAt } = r;
   const sellable = variants.filter((v) => v.mode);

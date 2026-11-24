@@ -96,19 +96,22 @@ function variantMode(v: any, validDays: number, now = new Date()): StoreMode | n
 export interface StoreCard {
   id: number; slug: string; name: string; category: string; categoryLabel: string; price: number; promoPrice: number | null; promoPct: number | null;
   image: string | null; colors: { name: string; hex: string | null }[]; sizes: string[];
-  hasPronta: boolean; hasPre: boolean; prontaUnits: number; unique: boolean;
+  hasPronta: boolean; hasPre: boolean; prontaUnits: number; unique: boolean; source: string;
 }
+
+/** Prévia (ambiente de aprovação): mostra também as peças próprias ainda ocultas. Nunca ligado em produção. */
+const VISIBLE = process.env.STORE_PREVIEW === "1" ? "(p.store_visible or p.source = 'proprio')" : "p.store_visible";
 
 export const imageSrc = (img: { id: number; url: string | null }) => img.url ?? `/loja/img/${img.id}`;
 
-export async function listStoreProducts(isVip = false): Promise<StoreCard[]> {
+export async function listStoreProducts(isVip = false, now = new Date()): Promise<StoreCard[]> {
   const s = await getSettings();
-  const promo = activePromo(await storePromotions(), isVip);
+  const promo = activePromo(await storePromotions(), isVip, now);
   const products = await q<any>(
     `select p.id, p.slug, p.name, p.category, p.sale_price, p.promo_price, p.image_url, p.source, p.created_at,
             (select json_build_object('id', im.id, 'url', im.url) from draum.product_images im where im.product_id = p.id order by im.position, im.id limit 1) as img
        from draum.products p
-      where p.status = 'ativo' and p.store_visible and p.slug is not null and p.sale_price > 0
+      where p.status = 'ativo' and ${VISIBLE} and p.slug is not null and p.sale_price > 0
         and ($1::boolean or p.source <> 'mft')
       order by (p.source = 'proprio') desc, p.created_at desc`, [s.store.mft_enabled]);
   if (!products.length) return [];
@@ -117,7 +120,7 @@ export async function listStoreProducts(isVip = false): Promise<StoreCard[]> {
   for (const v of variants) (byProduct.get(v.product_id) ?? byProduct.set(v.product_id, []).get(v.product_id)!).push(v);
   const cards: StoreCard[] = [];
   for (const p of products) {
-    const vs = (byProduct.get(p.id) ?? []).map((v) => ({ ...v, mode: variantMode(v, s.availability_valid_days) })).filter((v) => v.mode);
+    const vs = (byProduct.get(p.id) ?? []).map((v) => ({ ...v, mode: variantMode(v, s.availability_valid_days, now) })).filter((v) => v.mode);
     if (!vs.length) continue;
     if (p.source === "mft" && !p.img && !p.image_url) continue; // peça da distribuidora sem foto não vende: fica fora até ganhar foto
     const colors = new Map<string, string | null>();
@@ -134,21 +137,22 @@ export async function listStoreProducts(isVip = false): Promise<StoreCard[]> {
       sizes: [...new Set(vs.map((v) => v.size))].sort((a, b) => sizeRank(a) - sizeRank(b)),
       hasPronta: pronta.length > 0, hasPre: vs.some((v) => v.mode === "pre"), prontaUnits,
       unique: pronta.length > 0 && prontaUnits === 1 && !vs.some((v) => v.mode === "pre"),
+      source: p.source,
     });
   }
   return cards;
 }
 
-export async function getStoreProduct(slug: string, isVip = false) {
+export async function getStoreProduct(slug: string, isVip = false, now = new Date()) {
   const s = await getSettings();
-  const promo = activePromo(await storePromotions(), isVip);
+  const promo = activePromo(await storePromotions(), isVip, now);
   const p = await q1<any>(
-    `select p.* from draum.products p where p.slug = $1 and p.status = 'ativo' and p.store_visible and ($2::boolean or p.source <> 'mft')`,
+    `select p.* from draum.products p where p.slug = $1 and p.status = 'ativo' and ${VISIBLE} and ($2::boolean or p.source <> 'mft')`,
     [slug, s.store.mft_enabled]);
   if (!p) return null;
   const variants = (await q<any>(`${VARIANT_SQL} and v.product_id = $1`, [p.id]))
     .map((v) => ({ id: v.id as number, color: v.color as string, hex: v.color_hex as string | null, size: v.size as string,
-      available: Number(v.available), mode: variantMode(v, s.availability_valid_days) }))
+      available: Number(v.available), mode: variantMode(v, s.availability_valid_days, now) }))
     .sort((a, b) => a.color.localeCompare(b.color) || sizeRank(a.size) - sizeRank(b.size));
   const images = (await q<any>(`select id, url, color from draum.product_images where product_id = $1 order by position, id`, [p.id]))
     .map((im) => ({ src: imageSrc(im), color: im.color as string | null }));
@@ -160,19 +164,19 @@ export async function getStoreProduct(slug: string, isVip = false) {
       promoPrice: promoApplies(promo, p.id) ? discounted(Number(p.sale_price), promo!.pct) : p.promo_price != null ? Number(p.promo_price) : null,
       promoPct: promoApplies(promo, p.id) ? promo!.pct : null, promoName: promoApplies(promo, p.id) ? promo!.name : null,
       promoEnds: promoApplies(promo, p.id) ? promo!.endsAt.toISOString() : null },
-    variants, images, deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s),
-    cutoffAt: (() => { const d = storeDeliveryDate(new Date(), s); return d ? cutoffFor(d, s).toISOString() : null; })(),
+    variants, images, deliveryDate: storeDeliveryDate(now, s), cutoff: cutoffLabel(s),
+    cutoffAt: (() => { const d = storeDeliveryDate(now, s); return d ? cutoffFor(d, s).toISOString() : null; })(),
   };
 }
 
 /** Dados do carrinho (preços e disponibilidade sempre vindos do servidor) */
-export async function cartLines(items: { variantId: number; qty: number }[], isVip = false) {
+export async function cartLines(items: { variantId: number; qty: number }[], isVip = false, now = new Date()) {
   const s = await getSettings();
-  const promo = activePromo(await storePromotions(), isVip);
+  const promo = activePromo(await storePromotions(), isVip, now);
   const promoInfo = promo ? { id: promo.id, name: promo.name, pct: promo.pct } : null;
-  if (!items.length) return { lines: [], deliveryDate: storeDeliveryDate(new Date(), s), cutoff: cutoffLabel(s), cutoffAt: null as string | null, whatsappReady: !!s.store.whatsapp, promo: promoInfo, onlinePayment: !!s.store.infinitepay_handle };
+  if (!items.length) return { lines: [], deliveryDate: storeDeliveryDate(now, s), cutoff: cutoffLabel(s), cutoffAt: null as string | null, whatsappReady: !!s.store.whatsapp, promo: promoInfo, onlinePayment: !!s.store.infinitepay_handle };
   const rows = await q<any>(
-    `${VARIANT_SQL} and v.id = any($1) and p.status = 'ativo' and p.store_visible`, [items.map((i) => i.variantId)]);
+    `${VARIANT_SQL} and v.id = any($1) and p.status = 'ativo' and ${VISIBLE}`, [items.map((i) => i.variantId)]);
   const info = await q<any>(
     `select v.id, p.id as product_id, p.name, p.slug, p.sale_price, p.promo_price,
             (select coalesce(im.url, '/loja/img/' || im.id) from draum.product_images im where im.product_id = p.id
@@ -183,7 +187,7 @@ export async function cartLines(items: { variantId: number; qty: number }[], isV
     const v = rows.find((r) => r.id === it.variantId);
     const meta = info.find((r) => r.id === it.variantId);
     if (!v || !meta) return null;
-    const mode = variantMode(v, s.availability_valid_days);
+    const mode = variantMode(v, s.availability_valid_days, now);
     const maxQty = mode === "pronta" ? Number(v.available) : mode === "pre" ? Math.min(v.supplier_stock ?? 10, 10) : 0;
     const qty = Math.min(it.qty, Math.max(maxQty, 0));
     // Mesmo cálculo do CONTROL: com promoção, a base é o preço de venda e o desconto é por linha
@@ -194,7 +198,7 @@ export async function cartLines(items: { variantId: number; qty: number }[], isV
     return { variantId: v.id as number, name: meta.name as string, slug: meta.slug as string, color: v.color as string, size: v.size as string,
       image: (meta.image ?? meta.image_url) as string | null, mode, unitPrice: unit, listPrice: base, onPromo, lineTotal, qty, maxQty };
   }).filter(Boolean) as any[];
-  const dd = storeDeliveryDate(new Date(), s);
+  const dd = storeDeliveryDate(now, s);
   return { lines, deliveryDate: dd, cutoff: cutoffLabel(s), cutoffAt: dd ? cutoffFor(dd, s).toISOString() : null, whatsappReady: !!s.store.whatsapp, promo: promoInfo, onlinePayment: !!s.store.infinitepay_handle };
 }
 
@@ -363,4 +367,18 @@ export async function registerLead(raw: unknown, opts: { vip: boolean }) {
   const whatsapp = normalizeWhatsapp(d.whatsapp)!;
   return upsertStoreCustomer({ name: d.name, whatsapp, email: d.email || null, marketing: true, vip: opts.vip,
     source: opts.vip ? "acesso antecipado VIP (loja)" : "lista de novidades (loja)" });
+}
+
+/** Vitrine "Os mais desejados": a lista escolhida na configuração; sem lista, as peças MFT de pronta-entrega e a seleção padrão */
+export const DEFAULT_FEATURED = ["conjunto-pulse", "conjunto-ryze", "conjunto-cold-2-0", "conjunto-club", "macaquito-street", "conjunto-glow", "conjunto-pilates", "conjunto-flare"];
+export function featuredCards(all: StoreCard[], slugs: string[] | undefined, max = 12) {
+  const pick = new Map<string, StoreCard>();
+  const bySlug = new Map(all.map((c) => [c.slug, c]));
+  if (slugs?.length) for (const sl of slugs) { const c = bySlug.get(sl); if (c) pick.set(sl, c); }
+  else {
+    // Por enquanto a vitrine destaca só a MFT (fotos de estúdio): primeiro as de pronta-entrega, depois a seleção
+    for (const c of all) if (c.source === "mft" && c.hasPronta) pick.set(c.slug, c);
+    for (const sl of DEFAULT_FEATURED) { const c = bySlug.get(sl); if (c && c.source === "mft") pick.set(sl, c); }
+  }
+  return [...pick.values()].filter((c) => c.image).slice(0, max);
 }

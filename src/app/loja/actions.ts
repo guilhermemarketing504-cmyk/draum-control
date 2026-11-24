@@ -3,14 +3,16 @@ import { cookies, headers } from "next/headers";
 import { createPaymentLink } from "@/server/infinitepay";
 import { cartLines, placeStoreOrder, registerLead, isVipCode } from "@/server/store";
 import { errorMessage } from "@/lib/action";
-import { VIP_COOKIE, vipFromCookie } from "./vip";
+import { VIP_COOKIE, vipFromCookie, storeClock, PREVIEW } from "./vip";
+
+const PREVIEW_BLOCK = { ok: false as const, error: "Prévia de aprovação: compras e cadastros estão desligados aqui." };
 
 // Ações públicas da loja: não exigem sessão. Preços e disponibilidade são sempre recalculados no servidor.
 export async function cartAction(items: { variantId: number; qty: number }[]) {
   const clean = (Array.isArray(items) ? items : []).slice(0, 30)
     .map((i) => ({ variantId: Math.trunc(Number(i?.variantId)), qty: Math.min(Math.max(Math.trunc(Number(i?.qty)) || 1, 1), 10) }))
     .filter((i) => i.variantId > 0);
-  return cartLines(clean, await vipFromCookie());
+  return cartLines(clean, await vipFromCookie(), await storeClock());
 }
 
 async function baseUrl() {
@@ -19,6 +21,7 @@ async function baseUrl() {
 }
 
 export async function checkoutAction(input: unknown) {
+  if (PREVIEW) return PREVIEW_BLOCK;
   let order;
   try {
     order = await placeStoreOrder(input, await vipFromCookie());
@@ -38,6 +41,7 @@ export async function checkoutAction(input: unknown) {
 
 /** Cadastro na lista de novidades (página inicial) */
 export async function leadAction(input: unknown) {
+  if (PREVIEW) return PREVIEW_BLOCK;
   try {
     await registerLead(input, { vip: false });
     return { ok: true as const };
@@ -48,6 +52,7 @@ export async function leadAction(input: unknown) {
 
 /** Acesso antecipado: cadastro + libera os preços VIP neste navegador */
 export async function vipAccessAction(code: string, input: unknown) {
+  if (PREVIEW) return PREVIEW_BLOCK;
   try {
     if (!(await isVipCode(code))) return { ok: false as const, error: "Link de acesso inválido. Peça o link atualizado no grupo DRAUM PRIVATE ACCESS." };
     await registerLead(input, { vip: true });

@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { listStoreProducts, storePromotions, activePromo, type StoreCard, type StorePromo } from "@/server/store";
-import { vipFromCookie } from "./vip";
+import { listStoreProducts, storePromotions, featuredCards, type StoreCard, type StorePromo } from "@/server/store";
+import { vipFromCookie, storeClock } from "./vip";
+import { Carousel } from "./carousel";
+import { Countdown } from "./countdown";
 import { LeadForm } from "./lead-form";
 import { getSettings } from "@/server/core";
 import { storeDeliveryDate } from "@/server/store";
@@ -9,15 +11,18 @@ import { brl } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+const cat0 = (sp: { cat?: string }) => !!sp.cat;
 const dayMonth = (iso: string | null) => iso ? new Date(iso + "T12:00:00Z").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "UTC" }) : "";
 
 export default async function Loja({ searchParams }: { searchParams: Promise<{ tipo?: string; cat?: string }> }) {
   const sp = await searchParams;
   const tipo = sp.tipo === "pronta" || sp.tipo === "encomenda" ? sp.tipo : "todos";
   const isVip = await vipFromCookie();
-  const [all, s, promos] = await Promise.all([listStoreProducts(isVip), getSettings(), storePromotions()]);
-  const delivery = dayMonth(storeDeliveryDate(new Date(), s));
-  const hero = heroCopy(promos, isVip);
+  const now = await storeClock();
+  const [all, s, promos] = await Promise.all([listStoreProducts(isVip, now), getSettings(), storePromotions()]);
+  const delivery = dayMonth(storeDeliveryDate(now, s));
+  const hero = heroCopy(promos, isVip, now);
+  const featured = !cat0(sp) && tipo === "todos" ? featuredCards(all, s.store.featured) : [];
   const byType = all.filter((p) => tipo === "todos" || (tipo === "pronta" ? p.hasPronta : p.hasPre && !p.hasPronta));
   const cats = [...new Set(byType.map((p) => p.category))];
   const cat = sp.cat && cats.includes(sp.cat) ? sp.cat : null;
@@ -28,7 +33,28 @@ export default async function Loja({ searchParams }: { searchParams: Promise<{ t
 
   return (
     <div>
-      <Hero hero={hero} delivery={delivery} whatsapp={s.store.whatsapp} />
+      <Hero hero={hero} delivery={delivery} whatsapp={s.store.whatsapp} now={now.toISOString()} />
+
+      {featured.length >= 3 && (
+        <section className="pt-10 sm:pt-14">
+          <div className="max-w-[1240px] mx-auto px-5 sm:px-8 flex items-end justify-between gap-4 mb-5">
+            <div>
+              <div className="label mb-2">Seleção DRAUM</div>
+              <h2 className="font-display text-[26px] sm:text-[34px] leading-none">Os mais desejados</h2>
+            </div>
+            {featured.some((p) => p.promoPct) && (
+              <span className="bf-giant text-[18px] sm:text-[22px] bg-mineral text-offwhite px-3 py-1.5 whitespace-nowrap">Até -{Math.max(...featured.map((p) => p.promoPct ?? 0))}%</span>
+            )}
+          </div>
+          <Carousel>
+            {featured.map((p) => (
+              <div key={p.id} data-slide className="snap-start shrink-0 w-[68vw] sm:w-[300px] lg:w-[320px]">
+                <Card p={p} delivery={delivery} big />
+              </div>
+            ))}
+          </Carousel>
+        </section>
+      )}
 
       <div className="sticky top-[93px] md:top-16 z-20 bg-offwhite/95 backdrop-blur border-y border-line">
         <div className="max-w-[1240px] mx-auto px-5 sm:px-8 py-3 flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -96,7 +122,7 @@ function Shelf({ title, note, items, delivery }: { title: string; note: string; 
   );
 }
 
-function Card({ p, delivery }: { p: StoreCard; delivery: string }) {
+function Card({ p, delivery, big = false }: { p: StoreCard; delivery: string; big?: boolean }) {
   const price = p.promoPrice ?? p.price;
   const off = p.promoPct ?? (p.promoPrice != null && p.price > 0 ? Math.round((1 - p.promoPrice / p.price) * 100) : null);
   return (
@@ -107,7 +133,7 @@ function Card({ p, delivery }: { p: StoreCard; delivery: string }) {
           : <div className="absolute inset-0 flex items-center justify-center label">DRAUM</div>}
         {off != null && off > 0 && (
           <div className="absolute left-0 bottom-0 bg-mineral text-offwhite px-2.5 py-2 text-center leading-none">
-            <div className="bf-giant text-[22px] sm:text-[26px]">-{off}%</div>
+            <div className={`bf-giant ${big ? "text-[28px] sm:text-[32px]" : "text-[22px] sm:text-[26px]"}`}>-{off}%</div>
           </div>
         )}
         <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
@@ -120,11 +146,11 @@ function Card({ p, delivery }: { p: StoreCard; delivery: string }) {
         <div className="text-[13.5px] leading-snug group-hover:underline underline-offset-4 decoration-stone">{p.name}</div>
         {off != null && off > 0 ? (
           <div>
-            <div className="text-[11.5px] text-muted line-through num">{brl(p.price)}</div>
             <div className="flex items-baseline gap-2">
-              <span className="text-[18px] sm:text-[19px] font-semibold num tracking-tight">{brl(price)}</span>
-              <span className="text-[11px] font-semibold text-ok num">{off}% OFF</span>
+              <span className="text-[12.5px] text-muted num line-through decoration-[1.5px] decoration-[#B23A2E]">de {brl(p.price)}</span>
+              <span className="text-[10.5px] font-semibold num bg-ok text-offwhite px-1.5 py-0.5 leading-none">-{off}%</span>
             </div>
+            <div className={`${big ? "text-[22px] sm:text-[24px]" : "text-[19px] sm:text-[21px]"} font-semibold num tracking-tight leading-tight`}>por {brl(price)}</div>
           </div>
         ) : <div className="text-[15px] num">{brl(price)}</div>}
         <div className="text-[11.5px] text-ok">Chega grátis terça {delivery}</div>
@@ -144,32 +170,37 @@ function Card({ p, delivery }: { p: StoreCard; delivery: string }) {
 
 const fmtDay = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Belem" });
 const lastDay = (p: StorePromo) => fmtDay(new Date(p.endsAt.getTime() - 60_000));
+const fmtHour = (d: Date) => { const h = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Belem" }); return h.endsWith(":00") ? `${Number(h.slice(0, 2))}h` : h; };
+const fmtWhen = (d: Date) => `${fmtDay(d)} às ${fmtHour(d)}`;
 
-interface HeroCopy { kind: "bf" | "vip" | "normal"; eyebrow: string; giant?: [string, string]; title?: string; text: string; pitch?: string }
+interface HeroCopy { kind: "bf" | "vip" | "normal"; eyebrow: string; giant?: [string, string]; title?: string; text: string; pitch?: string; countdown?: { to: string; label: string } }
 
 /** Abertura da loja: lançamento + Black Friday, conforme a fase da campanha e quem está vendo (grupo VIP ou público) */
-function heroCopy(promos: StorePromo[], isVip: boolean, now = new Date()): HeroCopy {
+function heroCopy(promos: StorePromo[], isVip: boolean, now: Date): HeroCopy {
   const vip = promos.find((p) => p.requiresVip);
   const pub = promos.find((p) => !p.requiresVip);
   if (isVip && vip && now <= vip.endsAt) {
     if (now < vip.startsAt)
       return { kind: "vip", eyebrow: "DRAUM Private Access", giant: ["Acesso", "garantido"],
-        text: `Os seus ${vip.pct}% OFF liberam em ${fmtDay(vip.startsAt)}, antes de todo mundo. Volte por este mesmo celular.` };
+        text: `Os seus ${vip.pct}% OFF liberam em ${fmtWhen(vip.startsAt)}, antes de todo mundo. Volte por este mesmo celular.`,
+        countdown: { to: vip.startsAt.toISOString(), label: `Seus ${vip.pct}% OFF liberam em` } };
     return { kind: "vip", eyebrow: `DRAUM Private Access · até ${lastDay(vip)}`, giant: ["Acesso", "antecipado"],
       text: `${vip.pct}% OFF em tudo até ${lastDay(vip)}. ${pub ? "O dobro de quem está fora do grupo." : "Exclusivo do grupo."}` };
   }
   if (pub && now <= pub.endsAt) {
     const live = now >= pub.startsAt;
-    const pitch = vip && now <= vip.endsAt ? `No DRAUM Private Access é ${vip.pct}% OFF${now < vip.startsAt ? `, a partir de ${fmtDay(vip.startsAt)}` : ""}.` : undefined;
+    const pitch = vip && now <= vip.endsAt ? `No DRAUM Private Access é ${vip.pct}% OFF${now < vip.startsAt ? `, a partir de ${fmtWhen(vip.startsAt)}` : ""}.` : undefined;
+    const countdown = vip && now < vip.startsAt ? { to: vip.startsAt.toISOString(), label: "Ofertas do grupo começam em" }
+      : !live ? { to: pub.startsAt.toISOString(), label: "Black Friday para todos começa em" } : undefined;
     return { kind: "bf", eyebrow: live ? `Black Friday DRAUM · até ${lastDay(pub)}` : "Lançamento · Black Friday DRAUM", giant: ["Black", "Friday"],
       text: live ? `${pub.pct}% OFF em todas as peças até ${lastDay(pub)}.`
         : `A DRAUM chegou. ${pub.pct}% OFF em tudo, de ${fmtDay(pub.startsAt)} a ${lastDay(pub)}.`,
-      pitch };
+      pitch, countdown };
   }
   return { kind: "normal", eyebrow: "Coleção · Belém", title: "Movimento com presença, do treino ao fim de semana.", text: "Peças a pronta-entrega e uma seleção sob encomenda." };
 }
 
-function Hero({ hero, delivery, whatsapp }: { hero: HeroCopy; delivery: string; whatsapp: string }) {
+function Hero({ hero, delivery, whatsapp, now }: { hero: HeroCopy; delivery: string; whatsapp: string; now: string }) {
   const deliveryLine = <>Entrega grátis em Belém toda terça.</>;
   if (hero.kind === "normal") {
     return (
@@ -190,6 +221,9 @@ function Hero({ hero, delivery, whatsapp }: { hero: HeroCopy; delivery: string; 
           <span className="block">{hero.giant![0]}</span>
           <span className="block">{hero.giant![1]}</span>
         </h1>
+        {hero.countdown && (
+          <div className="mt-8"><Countdown to={hero.countdown.to} label={hero.countdown.label} serverNow={now} /></div>
+        )}
         <div className="mt-8 grid gap-6 lg:grid-cols-[1.2fr_1fr] items-end">
           <div className="space-y-3">
             <p className="text-[17px] sm:text-[19px] leading-snug max-w-[560px]">{hero.text}</p>

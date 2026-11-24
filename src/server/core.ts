@@ -57,7 +57,7 @@ export interface Settings {
 }
 
 export interface StoreSettings {
-  whatsapp: string; margin_pct: number; price_ending: number; mft_lead_days: number; mft_enabled: boolean; mft_supplier_id: number | null; vip_code?: string; infinitepay_handle?: string;
+  whatsapp: string; margin_pct: number; price_ending: number; mft_lead_days: number; mft_enabled: boolean; mft_supplier_id: number | null; vip_code?: string; infinitepay_handle?: string; featured?: string[];
 }
 export const STORE_DEFAULTS: StoreSettings = { whatsapp: "", margin_pct: 50, price_ending: 0.9, mft_lead_days: 2, mft_enabled: true, mft_supplier_id: null };
 
