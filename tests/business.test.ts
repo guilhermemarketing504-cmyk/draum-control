@@ -244,15 +244,15 @@ describe("10. Desconto sem margem suficiente", () => {
       min_items: 1, all_products: false, requires_vip: false, active: true, product_ids: [f.productId],
     });
     const input = { customerId: f.customerId, fulfillment: "retirada", paymentMethod: "pix", promotionId: promo.id, items: [pronta(f.variantM)] };
-    await expect(createOrder(op, input)).rejects.toThrow(/reduz a margem para 25%/);
+    await expect(createOrder(op, input)).rejects.toThrow(/reduz a margem para 24.95%/);
     await expect(createOrder(admin, input)).rejects.toThrow(/justificativa/);
     expect((await inv(f.variantM))!.qty_reserved).toBe(0);
     const ok = await createOrder(admin, { ...input, marginOverrideReason: "Peça de lançamento, aprovado pela direção" });
     const order = await q1<any>(`select discount_total, margin_override_by, margin_override_reason from draum.orders where id=$1`, [ok.id]);
-    expect(Number(order.discount_total)).toBe(40);
+    expect(Number(order.discount_total)).toBe(40.1);
     expect(order.margin_override_by).toBe(admin.userId);
     // descontos não cumulativos: duas peças (12%) não soma com a promoção escolhida
-    expect(ok.margin.discount).toBe(40);
+    expect(ok.margin.discount).toBe(40.1);
   });
 
   it("promoção VIP é recusada para cliente fora do grupo e fora da vigência", async () => {

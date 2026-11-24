@@ -72,6 +72,13 @@ export async function listPromotions() {
  * com promoção, o preço base é o preço de venda (ignora preço promocional do produto).
  * Retorna o desconto por linha, aplicado somente nos produtos elegíveis.
  */
+/** Preço com desconto da Black Friday terminando em ,90 — sempre arredonda para baixo, então o desconto nunca fica menor que o anunciado */
+export function promoUnitPrice(unit: number, pct: number) {
+  const p = round2(unit - (unit * pct) / 100);
+  const r = round2(Math.floor(p - 0.9 + 1e-9) + 0.9);
+  return r > 0 ? r : p;
+}
+
 export function applyPromotion(
   promo: Promotion,
   lines: { productId: number; qty: number; unitPrice: number }[],
@@ -87,5 +94,7 @@ export function applyPromotion(
   const eligibleQty = lines.filter((l) => eligible(l.productId)).reduce((a, l) => a + l.qty, 0);
   if (eligibleQty === 0) throw new BusinessError(`Nenhum item do pedido é elegível para "${promo.name}".`);
   if (eligibleQty < promo.min_items) throw new BusinessError(`"${promo.name}" exige no mínimo ${promo.min_items} peça(s) elegível(is).`);
-  return lines.map((l) => (eligible(l.productId) ? round2((l.qty * l.unitPrice * Number(promo.pct)) / 100) : 0));
+  return lines.map((l) => !eligible(l.productId) ? 0
+    : promo.kind === "black_friday" ? round2(l.qty * (l.unitPrice - promoUnitPrice(l.unitPrice, Number(promo.pct))))
+    : round2((l.qty * l.unitPrice * Number(promo.pct)) / 100));
 }
